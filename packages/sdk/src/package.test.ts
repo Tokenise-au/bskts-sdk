@@ -19,6 +19,13 @@ describe("published dependency ranges", () => {
     for (const [name, range] of Object.entries(peers))
       expect(range, `peer ${name}`).toMatch(/^\^\d+\.\d+\.\d+$/);
   });
+  it("asks for viem no newer than it needs", () => {
+    // 2.55.0 is the first viem with the `robinhood` chain the SDK re-exports.
+    // 0.3.1 asked for ^2.57.0, which the bskts app (pinned to 2.55.19) could
+    // not satisfy without a viem upgrade it had no reason for.
+    expect(manifest("sdk").peerDependencies?.["viem"]).toBe("^2.55.0");
+    expect(manifest("mcp").dependencies?.["viem"]).toBe("^2.55.0");
+  });
   it("lets the MCP server take SDK patch releases", () => {
     expect(manifest("mcp").dependencies?.["@bskts/sdk"]).toBe("workspace:^");
   });
