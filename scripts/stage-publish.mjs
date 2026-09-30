@@ -32,7 +32,9 @@ function isPublished(name, version) {
   }
 }
 
-/** true when `name@version` is already staged and waiting for approval */
+/** true when `name@version` is already staged and waiting for approval. Works
+ * with local credentials only; in CI it returns false and the 409 below is what
+ * catches an already-staged version. */
 function isStaged(name, version) {
   try {
     const staged = JSON.parse(run("npm", ["stage", "list", name, "--json"]) || "[]");
@@ -67,9 +69,24 @@ for (const dir of PACKAGES) {
     console.log(`${name}@${version}: would stage ${tarball}`);
     continue;
   }
-  run("npm", ["stage", "publish", join(out, tarball), "--access", "public"], {
-    stdio: ["ignore", "inherit", "inherit"],
-  });
+  try {
+    const log = run("npm", ["stage", "publish", join(out, tarball), "--access", "public"]);
+    process.stdout.write(log);
+  } catch (e) {
+    const err = `${e.stdout ?? ""}${e.stderr ?? ""}`;
+    // 409 "Cannot stage previously published version": the version is taken,
+    // by a staged release waiting for approval or a published one. isStaged()
+    // cannot see staged versions from CI (`npm stage list` has no credentials
+    // there; the OIDC exchange only happens inside stage publish), so a re-run
+    // lands here for every version it already staged (2026-09-30: a re-run
+    // stopped on the staged SDK before reaching the MCP server). Skip it.
+    if (/\b409\b/.test(err) && /previously published/i.test(err)) {
+      console.log(`${name}@${version}: already staged or published, skipping`);
+      continue;
+    }
+    process.stderr.write(err);
+    throw e;
+  }
   console.log(`${name}@${version}: staged. Approve it on npmjs.com to publish.`);
   staged++;
 }
