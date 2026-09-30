@@ -39,7 +39,7 @@ importers:
   packages/mcp:
     dependencies:
       '@bskts/sdk':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../sdk
       '@modelcontextprotocol/sdk':
         specifier: ^1.31.0
