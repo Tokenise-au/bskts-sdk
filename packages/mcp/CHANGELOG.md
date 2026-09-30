@@ -1,5 +1,11 @@
 # @bskts/mcp
 
+## 0.1.2
+
+### Patch Changes
+
+- be1b308: Report the real package version in the MCP server's info and in `VERSION` (0.1.1 reported "0.1.0").
+
 ## 0.1.1
 
 ### Patch Changes
