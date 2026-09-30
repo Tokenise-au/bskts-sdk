@@ -1,0 +1,57 @@
+{
+  "name": "@bskts/sdk",
+  "version": "0.3.0",
+  "description": "Typed, non-custodial client for the bskts API: tokenized index baskets on Robinhood Chain. Reads, unsigned transaction builders, dry runs and guard rails for wallets and agents.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "keywords": [
+    "bskts",
+    "robinhood-chain",
+    "defi",
+    "index",
+    "basket",
+    "sdk",
+    "agent",
+    "viem",
+    "non-custodial"
+  ],
+  "homepage": "https://github.com/Tokenise-au/bskts-sdk/tree/main/packages/sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tokenise-au/bskts-sdk.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": "https://github.com/Tokenise-au/bskts-sdk/issues",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "check:package": "publint && attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "viem": "^2.57.0"
+  },
+  "peerDependencies": {
+    "viem": "2.30.0"
+  }
+}

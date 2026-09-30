@@ -1,0 +1,13 @@
+packages:
+  - packages/*
+
+# Supply-chain guards, as in the bskts app repo:
+# - minimumReleaseAge: refuse package versions published less than a day ago.
+#   Hijacked releases (chalk/debug, Sept 2025; the Shai-Hulud worm) were caught
+#   and pulled within hours, so a 24h delay keeps them out of installs.
+# - strictDepBuilds + onlyBuiltDependencies: dependency install scripts do not
+#   run unless listed here, and an unlisted one fails the install instead of
+#   being skipped silently.
+minimumReleaseAge: 1440
+strictDepBuilds: true
+onlyBuiltDependencies: []

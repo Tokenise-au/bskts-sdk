@@ -1,0 +1,55 @@
+{
+  "name": "@bskts/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for bskts: read tokenized index baskets on Robinhood Chain and build unsigned buys, sells and orders. stdio and Streamable HTTP.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "bin": {
+    "bskts-mcp": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "keywords": [
+    "bskts",
+    "mcp",
+    "model-context-protocol",
+    "robinhood-chain",
+    "agent",
+    "defi"
+  ],
+  "homepage": "https://github.com/Tokenise-au/bskts-sdk/tree/main/packages/mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tokenise-au/bskts-sdk.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": "https://github.com/Tokenise-au/bskts-sdk/issues",
+  "mcpName": "io.github.Tokenise-au/bskts",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "check:package": "publint && attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@bskts/sdk": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "viem": "^2.57.0",
+    "zod": "^4.6.5"
+  }
+}
