@@ -1,13 +1,20 @@
 # Release: on main, Changesets opens (or updates) a "Version packages" PR from
-# the merged changesets; merging that PR publishes the bumped packages to npm.
+# the merged changesets; merging that PR STAGES the bumped versions on npm
+# (scripts/stage-publish.mjs), and a maintainer approves each one with 2FA on
+# npmjs.com (or `npm stage approve <stage-id>`) before it goes live.
 #
 # npm trusted publishing (OIDC): no npm token is stored anywhere. Each package
-# is linked to this repo and this workflow file on npmjs.com (package Settings
-# -> Trusted publishing), and npm issues a short-lived credential per run.
+# trusts this repo and this workflow file (package Settings -> Trusted
+# Publisher), stage-only ("Allow npm publish" unticked, npm's recommendation):
+# a compromised repo or workflow can stage a version but never ship one.
+#
 # npm attaches provenance to a trusted publish from a public repo by itself, so
 # package.json does not ask for it: a publishConfig.provenance of true made the
 # one-time manual first publish (a package must exist on npm before its trusted
 # publisher can be set) fail, since provenance can only be made in CI.
+#
+# No git tags or GitHub releases yet: Changesets makes them from a publish's
+# output, and a staged version is not published until someone approves it.
 name: Release
 
 on:
@@ -38,7 +45,7 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
-      # trusted publishing needs npm >= 11.5
+      # staged publishing needs npm >= 11.15 (trusted publishing >= 11.5)
       - run: npm install -g npm@latest
       - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         # v2 input names (v1's version/publish/title/commit were renamed and now fail the run)
@@ -48,3 +55,6 @@ jobs:
           pr-title: "chore: version packages"
           commit-message: "chore: version packages"
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # staged, not published: nothing to tag until a maintainer approves
+          create-github-releases: false
+          push-git-tags: false

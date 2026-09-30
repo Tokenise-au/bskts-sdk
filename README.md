@@ -23,7 +23,7 @@ pnpm run format       # oxfmt
 pnpm run check:packages  # publint + arethetypeswrong on the built packages
 ```
 
-A change users would notice needs a changeset (`pnpm changeset`); see [.changeset/README.md](.changeset/README.md). Releases publish from CI with npm trusted publishing and provenance.
+A change users would notice needs a changeset (`pnpm changeset`); see [.changeset/README.md](.changeset/README.md). Releases are staged from CI with npm trusted publishing and go live when a maintainer approves them with 2FA.
 
 ## Security
 
