@@ -4,9 +4,10 @@
 # npm trusted publishing (OIDC): no npm token is stored anywhere. Each package
 # is linked to this repo and this workflow file on npmjs.com (package Settings
 # -> Trusted publishing), and npm issues a short-lived credential per run.
-# Provenance is attached automatically (public repo). The first publish of a
-# new package needs a one-time manual publish or an npm org owner to create the
-# package before trusted publishing can be configured for it.
+# npm attaches provenance to a trusted publish from a public repo by itself, so
+# package.json does not ask for it: a publishConfig.provenance of true made the
+# one-time manual first publish (a package must exist on npm before its trusted
+# publisher can be set) fail, since provenance can only be made in CI.
 name: Release
 
 on:
