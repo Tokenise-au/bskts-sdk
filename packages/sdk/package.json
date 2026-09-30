@@ -37,8 +37,7 @@
   },
   "bugs": "https://github.com/Tokenise-au/bskts-sdk/issues",
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "scripts": {
     "build": "tsdown",
