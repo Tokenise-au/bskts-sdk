@@ -2,7 +2,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { BsktsClient, type Policy } from "@bskts/sdk";
 import { describe, expect, it } from "vitest";
-import { createBsktsMcpHandler, createBsktsServer } from "./index";
+import { createBsktsMcpHandler, createBsktsServer, VERSION } from "./index";
+import pkg from "../package.json" with { type: "json" };
 
 const ADDR = "0x000000000000000000000000000000000000dEaD";
 
@@ -169,7 +170,11 @@ describe("bskts MCP server", () => {
       },
     });
     expect(init.status).toBe(200);
-    expect((await init.json()).result.serverInfo.name).toBe("bskts");
+    const { serverInfo } = (await init.json()).result;
+    expect(serverInfo.name).toBe("bskts");
+    // the published version, not a hand-typed copy (0.1.1 reported "0.1.0")
+    expect(serverInfo.version).toBe(pkg.version);
+    expect(VERSION).toBe(pkg.version);
     const list = await post({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     expect((await list.json()).result.tools).toHaveLength(7);
   });

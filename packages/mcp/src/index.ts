@@ -10,10 +10,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { BsktsClient, type BsktsClientOptions } from "@bskts/sdk";
 import { INSTRUCTIONS, registerBsktsTools } from "./tools";
+import pkg from "../package.json" with { type: "json" };
 
 export { INSTRUCTIONS, registerBsktsTools } from "./tools";
 
-export const VERSION = "0.1.0";
+/** From package.json at build time (the bundler inlines it): typed by hand, it
+ * stayed "0.1.0" in the published 0.1.1, since Changesets bumps package.json only. */
+export const VERSION: string = pkg.version;
 
 export interface BsktsMcpOptions extends BsktsClientOptions {
   /** reuse a client instead of building one from the options */
