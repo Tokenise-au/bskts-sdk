@@ -15,6 +15,13 @@ export type ErrorCode =
   | "UPSTREAM"
   | "SERVER"
   // from the SDK
+  | "FEE_REQUIRED"
+  | "SESSION_INACTIVE"
+  | "SESSION_LIMIT"
+  | "INSUFFICIENT_FUNDS"
+  | "RATE_LIMITED" // the relayer turned it away before sending; the same signed action may be resubmitted
+  | "REFUSED" // the relayer refused it before sending (the reason is in the message); fix, don't resubmit
+  | "UNCERTAIN" // the relayer failed and may have sent it: check the nonce on chain before anything else
   | "POLICY" // the client's policy refused it; nothing was requested or sent
   | "SIMULATION_FAILED" // the API's dry run reverted; execute() did not send
   | "TX_FAILED" // mined and reverted

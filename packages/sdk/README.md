@@ -110,7 +110,11 @@ Every failure is a `BsktsError` with `code`, `retryable` and `detail`:
 | `NO_ROUTE`                                                     | a constituent has no route right now: that basket can't be bought or sold through the API           |
 | `NO_REFERENCE`                                                 | limit / exit orders unavailable for this basket (market buys and sells work)                        |
 | `UNKNOWN_BASKET`, `BAD_REQUEST`, `ORDER_NOT_OPEN`, `NOT_FOUND` | fix the request                                                                                     |
-| `PAUSED`, `UPSTREAM`, `SERVER`, `NETWORK`                      | `retryable: true`: try again later                                                                  |
+| `PAUSED`, `UPSTREAM`, `SERVER`, `NETWORK`                      | `retryable: true`: try again later (except `NETWORK` from `sessionRelayer`: see `UNCERTAIN`)        |
+| `FEE_REQUIRED`                                                 | the relayer quoted `detail.requiredFee`; `executeSession` re-signs the same action within your cap  |
+| `RATE_LIMITED`                                                 | `retryable: true`: the relayer sent nothing; resubmit the same signed action later                  |
+| `REFUSED`                                                      | the relayer refused before sending (reason in the message); `retryable` only for its 503            |
+| `UNCERTAIN`                                                    | the relayer failed and may have sent it: check the action's nonce on chain before anything else     |
 | `TX_FAILED`                                                    | mined and reverted (usually the market moved past `minShares` / `minOut`): rebuild and retry        |
 | `BAD_RESPONSE`                                                 | the API answered with a shape this SDK version doesn't know: upgrade                                |
 
@@ -125,3 +129,82 @@ Every failure is a `BsktsError` with `code`, `retryable` and `detail`:
 Resting orders and scheduled buys are **public jobs**: `jobs()` lists every one executable right now, with calldata and the fee it pays whoever sends it. Simulate first; each fill is held to the order's on-chain floor.
 
 MIT · [API guide for agents](https://api.bskts.xyz/llms.txt) · [bskts docs](https://bskts.xyz/docs.md)
+
+## Delegated agents (bskts accounts)
+
+Use this path for autonomous trades after a one-time owner approval. Direct
+wallet `buildBuy/buildSell` plans are a different path and need the wallet's
+signer and ETH. A delegated agent trades from the owner's bskts account, never
+withdraws, and pays network fees from account USDG.
+
+1. Create an agent signing key in your host wallet or secure signer. Share only
+   its public address. The SDK and MCP never accept private keys.
+2. Read `client.agentSession({owner, key})`. It resolves the owner's account.
+   If inactive, send the owner to the returned `approvalUrl`; in Portfolio they
+   connect the public key and review/sign its limits. Fund that account with USDG.
+3. Build `client.buildAgentTrade({owner,key,ticker,side:"buy",amountUsdg:6})`
+   or `{owner,key,ticker,side:"sell",shares}` (exact bigint base units).
+4. Give `executeSession` the host's signer callbacks and an explicit network
+   fee ceiling. There is no owner popup per trade or owner/agent ETH requirement.
+
+```ts
+import { BsktsClient, executeSession, sessionRelayer } from "@bskts/sdk";
+import type { SessionSender } from "@bskts/sdk";
+
+// hostSigner is supplied by your secure host wallet, already configured to
+// use the agent key. Never embed a private key in source, prompts or MCP calls.
+const client = new BsktsClient();
+const key = hostSigner.address;
+const permission = await client.agentSession({ owner, key });
+if (!permission.active) throw new Error("Owner approval required: " + permission.approvalUrl);
+
+const sender: SessionSender = {
+  key,
+  sign: (typedData) => hostSigner.signTypedData(typedData),
+  submit: sessionRelayer(),
+};
+const plan = await client.buildAgentTrade({
+  owner,
+  key,
+  ticker: "INDEX2",
+  side: "buy",
+  amountUsdg: 6,
+  slippageBps: 50,
+});
+const receipt = await executeSession(plan, sender, {
+  maxNetworkFeeUsdg: 250_000n, // host explicitly allows at most $0.25 network fee
+});
+```
+
+Suggested owner limits: 10% of available account USDG capped at $100 of daily
+turnover, 0.5% all-in module slippage, seven days. The approved dollar limit
+stays fixed after deposits. Only the owner can change/renew it. Some baskets
+need more slippage; request owner approval rather than silently widening it.
+The relayer needs $5 of basket value after fees/slippage for buys (so a $5 cash
+budget can be too small), or the entire sell position.
+
+Session plans are unsigned, so `simulation.ok` is null. The relayer simulates
+the signed Action before broadcasting. A 402 `requiredFee` is re-signed only
+within the host's fee cap, retaining the same nonce, deadline and trade terms.
+
+`executeSession` remembers the fee each kind of trade on each basket last
+needed (the relayer quotes on success too) and signs the next one with it, so
+a repeat trade is one signature and one relayer round trip. A plan built with
+`feeUsdg` keeps that fee, and a remembered fee above your cap is not used. The
+memory lives in this process for six hours; pass `fees: new Map()` or your own
+`{ get, set }` store to keep it elsewhere (across workers or restarts), or
+`fees: false` to always start from the 402 quote.
+
+The SDK does **not** automatically retry a timeout: check
+`BsktsSessionModule.nonceUsed(account,nonce)` and the `Executed` event before
+resubmitting. Never rebuild a possibly submitted trade with a new nonce.
+
+Daily turnover includes buys and sells, resets at 00:00 UTC, is separate for
+each key and excludes network fees (module hard ceiling $10 per Action).
+Revoking blocks new requests once confirmed; existing orders/schedules can
+still execute and need separate cancellation. Use a fresh key to reconnect.
+
+The MCP exposes `bskts_agent_session` and `bskts_agent_trade` for the same
+flow. It stays unsigned: your agent host must supply the signer and submitter.
+
+Agent keys authorise account trading, including Weekend Cover when it is enabled. Cover spending is counted separately against the same daily limit; underwriting additionally requires the account owner’s allowance. Individual key revocation leaves existing Cover listings open: withdraw them in My cover. The API’s moduleEnabled/coverEnabled fields report the current account setup.

@@ -1,6 +1,7 @@
 /**
  * @bskts/mcp: the bskts API as MCP tools. Read markets and accounts and build
- * unsigned buys, sells and orders on Robinhood Chain; the user's wallet signs.
+ * unsigned buys, sells and orders on Robinhood Chain. Wallet plans use the owner's
+ * signer; delegated account Actions use an owner-approved host session signer.
  *
  * - `bskts-mcp` (bin): stdio, for local clients (Claude Code, Claude Desktop, Cursor).
  * - createBsktsMcpHandler(): Streamable HTTP, stateless, for a fetch-style

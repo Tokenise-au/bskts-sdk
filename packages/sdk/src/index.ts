@@ -3,8 +3,9 @@
  * (https://api.bskts.xyz), tokenized index baskets on Robinhood Chain.
  *
  * Reads return data validated against Zod schemas; build* methods return
- * UNSIGNED plans ({ approval, tx, simulation }) that your wallet signs, through
- * execute() and a viem Sender. The SDK never holds keys or funds.
+ * UNSIGNED wallet plans ({ approval, tx, simulation }) that your wallet signs, through
+ * execute() and a viem Sender. Agent plans use a host SessionSender and relayer.
+ * The SDK never holds private keys or funds.
  */
 export { robinhood } from "viem/chains";
 export { BsktsClient, DEFAULT_API_URL } from "./client";
@@ -20,3 +21,12 @@ export type * from "./schemas";
 
 /** USDG, the dollar token baskets are bought and sold for (6 decimals). */
 export const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" as const;
+export {
+  agentTypedData,
+  executeSession,
+  feeKey,
+  feeMemory,
+  sessionRelayer,
+  SESSION_ACTION_TYPES,
+} from "./agent";
+export type { AgentTypedData, FeeMemory, SessionSender } from "./agent";

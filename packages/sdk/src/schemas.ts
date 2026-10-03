@@ -285,3 +285,67 @@ export type LimitPlan = z.infer<typeof limitPlan>;
 export type RedeemPlan = z.infer<typeof redeemPlan>;
 export type SwapCall = z.infer<typeof swapCall>;
 export type Job = z.infer<typeof job>;
+
+// 2026-10-02: delegated plans are Actions, not transactions from the owner's
+// wallet. Pin the signing domain so a response cannot change the module.
+export const SESSION_MODULE = "0x66a0ba9be3f6779b4f24CE6135Cc93B5559888Da" as const;
+const uint256 = wei.refine((n) => n < 2n ** 256n, "exceeds uint256");
+export const agentSession = z.object({
+  owner: address,
+  account: address,
+  key: address,
+  chainId: z.literal(4663),
+  module: z.literal(SESSION_MODULE),
+  deployed: z.boolean(),
+  moduleEnabled: z.boolean(),
+  coverEnabled: z.boolean(),
+  active: z.boolean(),
+  paused: z.boolean(),
+  usdgWei: uint256,
+  dailyLimitUsdg: uint256,
+  remainingTodayUsdg: uint256,
+  maxSlippageBps: z.number().int().min(0).max(1000),
+  validUntil: z.number().int().nonnegative(),
+  // 2026-10-03: a literal broke every call when the app moved Agents from
+  // #agents to ?p=agents. It's only a page for the owner; pin its origin, not
+  // its path. relayerUrl and module stay exact: signed Actions go there.
+  approvalUrl: z.url().refine((u) => new URL(u).origin === "https://bskts.xyz", "not bskts.xyz"),
+  relayerUrl: z.literal("https://bskts.xyz/relay/v1/account/execute"),
+  revokeEffect: z.string(),
+});
+export const sessionAction = z.object({
+  account: address,
+  key: address,
+  kind: z.union([z.literal(0), z.literal(1)]),
+  vault: address,
+  amount: uint256.refine((n) => n > 0n),
+  limit: uint256,
+  slippageBps: z.number().int().min(0).max(1000),
+  data: hex.refine((h) => h.length % 2 === 0),
+  nonce: uint256,
+  deadline: z
+    .number()
+    .int()
+    .positive()
+    .max(2 ** 48 - 1),
+  fee: uint256.refine((n) => n <= 10_000_000n),
+});
+export const agentTradePlan = z.object({
+  ticker: z.string(),
+  status: agentSession,
+  action: sessionAction,
+  relayerUrl: z.literal("https://bskts.xyz/relay/v1/account/execute"),
+  simulation,
+});
+export const sessionReceipt = z.object({
+  hash: hex.refine((h) => /^0x[0-9a-fA-F]{64}$/.test(h)),
+  blockNumber: z.number().int().nonnegative(),
+  gasUsed: z.number().nonnegative(),
+  // 2026-10-03: the relayer's current quote for this kind of trade, sent on
+  // success too; executeSession signs the next one with it (one signature).
+  requiredFee: wei.optional(),
+});
+export type AgentSession = z.infer<typeof agentSession>;
+export type SessionAction = z.infer<typeof sessionAction>;
+export type AgentTradePlan = z.infer<typeof agentTradePlan>;
+export type SessionReceipt = z.infer<typeof sessionReceipt>;

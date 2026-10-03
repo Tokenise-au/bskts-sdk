@@ -191,6 +191,60 @@ export class BsktsClient {
     );
   }
 
+  /** Resolve the owner's account and read the key's live on-chain authority.
+   * Inactive => owner connects the public key in Portfolio; never auto-renew. */
+  async agentSession(p: { owner: Address; key: Address }) {
+    const permission = await this.#request(s.agentSession, "/v1/agent/session" + this.#qs(p));
+    if (
+      permission.owner.toLowerCase() !== p.owner.toLowerCase() ||
+      permission.key.toLowerCase() !== p.key.toLowerCase()
+    )
+      throw new BsktsError(
+        "Permission response does not match the requested owner/key.",
+        "BAD_RESPONSE",
+      );
+    return permission;
+  }
+  /** Unsigned buy/sell Action for a delegated bskts account. Unlike buildBuy,
+   * no wallet approval or ETH is needed: a host session signer + relayer execute it. */
+  async buildAgentTrade(
+    p: { owner: Address; key: Address; ticker: string; slippageBps?: number; feeUsdg?: bigint } & (
+      | { side: "buy"; amountUsdg: number }
+      | { side: "sell"; shares: bigint }
+    ),
+  ) {
+    checkPolicy(this.policy, {
+      ticker: p.ticker,
+      slippageBps: p.slippageBps ?? 50,
+      ...(p.side === "buy" ? { usd: p.amountUsdg } : {}),
+    });
+    if (p.side === "buy" && this.policy.maxBuyCostBps != null) {
+      const { buyCostBps } = await this.basket(p.ticker);
+      checkPolicy(this.policy, { ticker: p.ticker, buyCostBps });
+    }
+    const plan = await this.#request(s.agentTradePlan, "/v1/agent/trade", p);
+    const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+    if (
+      !same(plan.status.owner, p.owner) ||
+      !same(plan.action.key, p.key) ||
+      !same(plan.status.key, p.key) ||
+      !same(plan.action.account, plan.status.account) ||
+      plan.ticker.toUpperCase() !== p.ticker.toUpperCase() ||
+      plan.action.kind !== (p.side === "buy" ? 0 : 1) ||
+      plan.action.slippageBps !== (p.slippageBps ?? 50) ||
+      plan.action.fee !== (p.feeUsdg ?? 0n) ||
+      (p.side === "buy"
+        ? plan.action.limit > BigInt(Math.floor(p.amountUsdg * 1e6))
+        : plan.action.amount !== p.shares)
+    )
+      throw new BsktsError("Agent plan does not match the requested trade.", "BAD_RESPONSE");
+    if (p.side === "sell" && this.policy.maxUsdPerTrade != null) {
+      const detail = await this.basket(p.ticker);
+      checkPolicy(this.policy, { usd: (Number(plan.action.amount) / 1e18) * (detail.nav ?? 0) });
+    }
+    return plan;
+  }
+
   // ---- construct (unsigned) -------------------------------------------------
   // Every plan carries `simulation`, the API's dry run as the sender, unless
   // `simulate: false`. execute() refuses a plan whose dry run reverted.

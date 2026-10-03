@@ -38,7 +38,7 @@ const text = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).c
 const PLAN = { approval: null, tx: { to: ADDR, data: "0x", value: "0" } };
 
 describe("bskts MCP server", () => {
-  it("lists seven tools, with annotations, inside a token budget", async () => {
+  it("lists nine tools, with annotations, inside a token budget", async () => {
     const mcp = await connect(api({}).client);
     const { tools } = await mcp.listTools();
     expect(tools.map((t) => t.name)).toEqual([
@@ -48,6 +48,8 @@ describe("bskts MCP server", () => {
       "bskts_buy",
       "bskts_sell",
       "bskts_order",
+      "bskts_agent_session",
+      "bskts_agent_trade",
       "bskts_guide",
     ]);
     expect(tools.every((t) => t.annotations?.readOnlyHint)).toBe(true);
@@ -176,6 +178,36 @@ describe("bskts MCP server", () => {
     expect(serverInfo.version).toBe(pkg.version);
     expect(VERSION).toBe(pkg.version);
     const list = await post({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-    expect((await list.json()).result.tools).toHaveLength(7);
+    expect((await list.json()).result.tools).toHaveLength(9);
+  });
+});
+
+describe("delegated agent MCP", () => {
+  it("reads live permissions and exposes no signing, grant or execution tools", async () => {
+    const { client } = api({});
+    const mcp = await connect(client);
+    const { tools } = await mcp.listTools();
+    expect(tools.map((t) => t.name)).toContain("bskts_agent_session");
+    expect(tools.map((t) => t.name)).toContain("bskts_agent_trade");
+    expect(tools.some((t) => /sign|execute|grant|withdraw/.test(t.name))).toBe(false);
+    expect(mcp.getInstructions()).toContain("Owner signature required");
+  });
+  it("rejects mixed buy/sell inputs before calling the API", async () => {
+    const { client, calls } = api({});
+    const result = await (
+      await connect(client)
+    ).callTool({
+      name: "bskts_agent_trade",
+      arguments: {
+        owner: ADDR,
+        key: ADDR,
+        ticker: "INDEX2",
+        side: "sell",
+        amountUsdg: 5,
+        shares: "1",
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(calls).toEqual([]);
   });
 });
