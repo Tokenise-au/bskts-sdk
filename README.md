@@ -30,3 +30,12 @@ A change users would notice needs a changeset (`pnpm changeset`); see [.changese
 The SDK and server never hold keys or send transactions. Report a vulnerability through a private [GitHub security advisory](https://github.com/Tokenise-au/bskts-sdk/security/advisories/new), not a public issue.
 
 MIT
+
+## Delegated agents
+
+For autonomous account trading after owner approval, use `agentSession` and
+`buildAgentTrade`, then `executeSession` with a host-provided signer and an
+explicit network-fee ceiling. MCP exposes `bskts_agent_session` and
+`bskts_agent_trade`, remains unsigned, and never accepts private keys. See the
+[SDK account guide](packages/sdk/README.md#delegated-agents-bskts-accounts) and
+[MCP account guide](packages/mcp/README.md#autonomous-account-path).

@@ -4,12 +4,12 @@
 // Unsigned only: build tools return the transactions for the user's own wallet
 // to sign; nothing here holds a key or sends anything.
 //
-// Token budget: seven tools. The rules an agent must follow (units, approval
+// Token budget: nine tools. The rules an agent must follow (units, approval
 // order, never send a failed dry run) live in the descriptions, so they arrive
 // with the tools instead of costing a docs read.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { type BsktsClient, BsktsError } from "@bskts/sdk";
+import { type BsktsClient, BsktsError, agentTypedData } from "@bskts/sdk";
 import type { Address } from "viem";
 import { z } from "zod";
 
@@ -62,7 +62,7 @@ const READ = { readOnlyHint: true, openWorldHint: true } as const;
 const BUILD = { readOnlyHint: true, openWorldHint: true, idempotentHint: false } as const;
 
 export const INSTRUCTIONS =
-  "bskts: tokenized index baskets of Stock Tokens and crypto on Robinhood Chain (chainId 4663). Tools read markets and accounts and build UNSIGNED transactions for the user's own wallet; nothing is signed or sent here. Before a trade: check bskts_account (gasOk, USDG), read the basket's risk note and buyCostBps. Sign `approval` first (wait for it to be mined), then `tx`. Never send a plan whose simulation.ok is false.";
+  "bskts: tokenized baskets on Robinhood Chain (4663). UNSIGNED tools; no keys, signing or sending here. Two paths: (1) wallet tools return approval then tx; owner pays ETH gas. (2) autonomous agents: bskts_agent_session resolves the owner account and checks public agent key authority; owner approves it once in Portfolio (10% available USDG capped $100/day, 0.5% slippage, 7 days, fixed dollars). bskts_agent_trade returns Action typedData for the host session signer and gasless USDG-fee relayer. No owner popup per delegated trade. Owner signature required to change/renew limits. Keys also authorise Cover when enabled; Cover spending counts separately, underwriting needs owner allowance. Revoking blocks new requests; existing orders/schedules require separate cancellation. Never request a private key or reuse a revoked key. Check basket risk and buyCostBps; never send failed simulations. Preserve nonce on bounded 402 fee retries; do not retry uncertain submissions with a new nonce.";
 
 export function registerBsktsTools(server: McpServer, client: BsktsClient) {
   server.registerTool(
@@ -227,6 +227,71 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
           triggerNav: a.triggerNav,
           expiryDays: a.expiryDays,
         });
+      }),
+  );
+
+  server.registerTool(
+    "bskts_agent_session",
+    {
+      title: "Agent account permissions",
+      description:
+        "Resolve a wallet owner's bskts account and read an agent public key's live authority: active, moduleEnabled, coverEnabled, USDG, basket turnover remaining, max slippage, expiry and owner approval URL. Cover spending counts separately. Start here for autonomous gasless trading. No ETH needed. Inactive => owner connects this public key in Portfolio; never request private keys or silently renew/increase limits.",
+      inputSchema: { owner: address, key: address },
+      annotations: READ,
+    },
+    (p) => run(() => client.agentSession(p)),
+  );
+  server.registerTool(
+    "bskts_agent_trade",
+    {
+      title: "Build a delegated agent trade",
+      description:
+        "Build an UNSIGNED buy/sell Action inside owner-approved permissions. Returns action, typedData and relayer URL. The agent host's matching session signer signs typedData; POST {action,signature} to the relayer. No wallet approval per trade, no ETH. A 402 fee quote requires a new signature within the host's explicit fee cap; preserve nonce and all trade terms. Never retry ambiguous timeouts with a new nonce. Existing wallet/order tools are a separate path.",
+      inputSchema: {
+        owner: address,
+        key: address,
+        ticker,
+        side: z.enum(["buy", "sell"]),
+        amountUsdg: z.number().min(5).optional().describe("buy: USDG dollars, minimum $5"),
+        shares: z
+          .string()
+          .regex(/^\d+$/)
+          .optional()
+          .describe("sell: exact account shares, 1e18 base units"),
+        slippageBps: z
+          .number()
+          .int()
+          .min(0)
+          .max(1000)
+          .optional()
+          .describe("all-in module tolerance; default 50 bps, never above owner approval"),
+        feeUsdg: z
+          .string()
+          .regex(/^\d+$/)
+          .optional()
+          .describe("network fee base units; default 0 for quote, never above host fee cap"),
+      },
+      annotations: BUILD,
+    },
+    (p) =>
+      run(async () => {
+        if (p.side === "buy" && (p.amountUsdg == null || p.shares != null))
+          throw new BsktsError("Buy needs amountUsdg and no shares.", "BAD_REQUEST");
+        if (p.side === "sell" && (p.shares == null || p.amountUsdg != null))
+          throw new BsktsError("Sell needs exact shares and no amountUsdg.", "BAD_REQUEST");
+        const base = {
+          owner: p.owner,
+          key: p.key,
+          ticker: p.ticker,
+          slippageBps: p.slippageBps,
+          feeUsdg: p.feeUsdg == null ? undefined : BigInt(p.feeUsdg),
+        };
+        const plan = await client.buildAgentTrade(
+          p.side === "buy"
+            ? { ...base, side: "buy", amountUsdg: p.amountUsdg! }
+            : { ...base, side: "sell", shares: BigInt(p.shares!) },
+        );
+        return { ...plan, typedData: agentTypedData(plan.action) };
       }),
   );
 

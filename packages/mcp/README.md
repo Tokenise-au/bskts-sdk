@@ -67,3 +67,29 @@ The user's own guard rails, checked before anything is built (environment variab
 | `BSKTS_API_URL`           | a different API (default `https://api.bskts.xyz`) |
 
 MIT
+
+## Autonomous account path
+
+Two additional unsigned tools expose delegated accounts:
+
+| Tool                  | Purpose                                                                                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bskts_agent_session` | Resolve the owner's account and read a public agent key's active status, USDG, daily remaining turnover, slippage and expiry. Returns owner approval and relayer URLs. |
+| `bskts_agent_trade`   | Build a buy/sell Action with EIP-712 typedData inside the owner's live limits. The host's matching session signer signs and submits it.                                |
+
+Create the signing key in your agent host wallet/secure signer; share only its
+public address. The owner connects that address in Portfolio once, reviews
+limits and signs. Suggested defaults: 10% available USDG capped $100/day,
+0.5% all-in slippage and seven days, fixed dollars until the owner approves a
+change. A funded bskts account is required; owner/agent ETH is not.
+
+This MCP server stays unsigned. It does not generate/store private keys,
+grant permissions, sign, submit trades or withdraw. Autonomous execution
+requires a host signer/submitter; `@bskts/sdk` provides `executeSession` and
+`sessionRelayer` for that host. Revocation blocks new requests after confirmation;
+existing orders/schedules require separate cancellation. Reconnect with a
+fresh key. On a 402 fee quote preserve nonce and trade terms, re-sign only
+the fee within the host's explicit fee cap. Never automatically replace an
+ambiguous submission with a new nonce.
+
+Agent keys authorise account trading, including Weekend Cover when it is enabled. Cover spending is counted separately against the same daily limit; underwriting additionally requires the account owner’s allowance. Individual key revocation leaves existing Cover listings open: withdraw them in My cover. The API’s moduleEnabled/coverEnabled fields report the current account setup.
