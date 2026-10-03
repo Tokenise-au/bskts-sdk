@@ -1,6 +1,6 @@
 {
   "name": "@bskts/sdk",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Typed, non-custodial client for the bskts API: tokenized index baskets on Robinhood Chain. Reads, unsigned transaction builders, dry runs and guard rails for wallets and agents.",
   "license": "MIT",
   "type": "module",
