@@ -6,16 +6,24 @@ Set up a [bskts](https://bskts.xyz) trading agent in one command:
 npm create @bskts/agent
 ```
 
-It asks for your wallet address (the owner of your bskts account) and creates `bskts-agent/`:
+The easiest start is bskts → Portfolio → **Agents**: it shows this command with your wallet
+address already filled in (`npm create @bskts/agent -- --owner 0x…`). Run on its own, it asks for
+the address. Paste the wallet you log in with; if you paste your bskts account's address instead,
+it finds the account's owner wallet and uses that.
 
-- `agent.mjs`: a first agent. `npm start` prints its address and a link that opens bskts →
-  Portfolio → Agents with the address filled in, waits while you approve its limits with your
-  wallet, then buys $6 of INDEX2 once. Replace that trade with your own logic.
-- `.env`: the agent's new private key, generated on your machine. It is never shown, logged or
-  sent anywhere, and `.gitignore` keeps it out of git. Keep it private: anyone with it can trade
-  within the limits you approved, until you revoke the agent in bskts. It can never withdraw.
+It creates `bskts-agent/`, installs it, and starts the agent:
 
-Options: `npm create @bskts/agent my-folder -- --owner 0x… --no-install`.
+- `agent.mjs`: a first agent. It prints its address and a link that opens bskts → Portfolio →
+  Agents with the address filled in, waits while you approve its limits with your wallet, then
+  buys $6 of INDEX2 once. Replace that trade with your own logic. It holds nothing personal, so
+  you can commit or share it.
+- `.env`: your wallet address (`BSKTS_OWNER`) and the agent's new private key (`AGENT_KEY`),
+  generated on your machine. The key is never shown, logged or sent anywhere, and `.gitignore`
+  keeps the file out of git. Keep it private: anyone with the key can trade within the limits you
+  approved, until you revoke the agent in bskts. It can never withdraw.
+
+Run it again later with `npm start` in the folder. Options:
+`npm create @bskts/agent my-folder -- --owner 0x… --no-install --no-start`.
 
 The agent trades from your bskts account within the daily turnover, slippage and expiry you
 approve; only your wallet can change them. Guide: https://bskts.xyz/docs#agents ·
