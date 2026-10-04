@@ -79,7 +79,7 @@ Two additional unsigned tools expose delegated accounts:
 
 Create the signing key in your agent host wallet/secure signer; share only its
 public address. The owner connects that address in Portfolio once, reviews
-limits and signs. Suggested defaults: 10% available USDG capped $100/day,
+limits and signs. Suggested defaults: 10% available USDG (at least $10) capped $100/day,
 0.5% all-in slippage and seven days, fixed dollars until the owner approves a
 change. A funded bskts account is required; owner/agent ETH is not.
 

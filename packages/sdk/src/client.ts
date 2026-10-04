@@ -231,7 +231,9 @@ export class BsktsClient {
       !same(plan.action.account, plan.status.account) ||
       plan.ticker.toUpperCase() !== p.ticker.toUpperCase() ||
       plan.action.kind !== (p.side === "buy" ? 0 : 1) ||
-      plan.action.slippageBps !== (p.slippageBps ?? 50) ||
+      // 2026-10-04: left out, the API uses 0.5% or the grant's maximum if
+      // that is lower (a fixed 50 failed every default trade under a tighter grant)
+      plan.action.slippageBps !== (p.slippageBps ?? Math.min(50, plan.status.maxSlippageBps)) ||
       plan.action.fee !== (p.feeUsdg ?? 0n) ||
       (p.side === "buy"
         ? plan.action.limit > BigInt(Math.floor(p.amountUsdg * 1e6))

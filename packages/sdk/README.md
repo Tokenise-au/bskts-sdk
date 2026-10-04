@@ -176,7 +176,7 @@ const receipt = await executeSession(plan, sender, {
 });
 ```
 
-Suggested owner limits: 10% of available account USDG capped at $100 of daily
+Suggested owner limits: 10% of available account USDG (at least $10) capped at $100 of daily
 turnover, 0.5% all-in module slippage, seven days. The approved dollar limit
 stays fixed after deposits. Only the owner can change/renew it. Some baskets
 need more slippage; request owner approval rather than silently widening it.

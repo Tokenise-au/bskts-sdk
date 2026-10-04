@@ -62,7 +62,7 @@ const READ = { readOnlyHint: true, openWorldHint: true } as const;
 const BUILD = { readOnlyHint: true, openWorldHint: true, idempotentHint: false } as const;
 
 export const INSTRUCTIONS =
-  "bskts: tokenized baskets on Robinhood Chain (4663). UNSIGNED tools; no keys, signing or sending here. Two paths: (1) wallet tools return approval then tx; owner pays ETH gas. (2) autonomous agents: bskts_agent_session resolves the owner account and checks public agent key authority; owner approves it once in Portfolio (10% available USDG capped $100/day, 0.5% slippage, 7 days, fixed dollars). bskts_agent_trade returns Action typedData for the host session signer and gasless USDG-fee relayer. No owner popup per delegated trade. Owner signature required to change/renew limits. Keys also authorise Cover when enabled; Cover spending counts separately, underwriting needs owner allowance. Revoking blocks new requests; existing orders/schedules require separate cancellation. Never request a private key or reuse a revoked key. Check basket risk and buyCostBps; never send failed simulations. Preserve nonce on bounded 402 fee retries; do not retry uncertain submissions with a new nonce.";
+  "bskts: tokenized baskets on Robinhood Chain (4663). UNSIGNED tools; no keys, signing or sending here. Two paths: (1) wallet tools return approval then tx; owner pays ETH gas. (2) autonomous agents: bskts_agent_session resolves the owner account and checks public agent key authority; owner approves it once in Portfolio (10% available USDG, at least $10, capped $100/day, 0.5% slippage, 7 days, fixed dollars). bskts_agent_trade returns Action typedData for the host session signer and gasless USDG-fee relayer. No owner popup per delegated trade. Owner signature required to change/renew limits. Keys also authorise Cover when enabled; Cover spending counts separately, underwriting needs owner allowance. Revoking blocks new requests; existing orders/schedules require separate cancellation. Never request a private key or reuse a revoked key. Check basket risk and buyCostBps; never send failed simulations. Preserve nonce on bounded 402 fee retries; do not retry uncertain submissions with a new nonce.";
 
 export function registerBsktsTools(server: McpServer, client: BsktsClient) {
   server.registerTool(
@@ -261,10 +261,12 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
         slippageBps: z
           .number()
           .int()
-          .min(0)
+          .min(1)
           .max(1000)
           .optional()
-          .describe("all-in module tolerance; default 50 bps, never above owner approval"),
+          .describe(
+            "all-in module tolerance; default 50 bps, or the grant maximum if lower; never above owner approval",
+          ),
         feeUsdg: z
           .string()
           .regex(/^\d+$/)
