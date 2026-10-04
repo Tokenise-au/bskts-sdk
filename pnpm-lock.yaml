@@ -36,6 +36,12 @@ importers:
         specifier: 5.0.2
         version: 5.0.2(@types/node@22.20.4)(vite@8.3.1(@types/node@22.20.4)(yaml@2.9.1))
 
+  packages/create-agent:
+    devDependencies:
+      viem:
+        specifier: ^2.57.0
+        version: 2.57.0(typescript@5.8.3)(zod@4.6.5)
+
   packages/mcp:
     dependencies:
       '@bskts/sdk':

@@ -306,6 +306,19 @@ describe("session transport and responses", () => {
       }),
     ).rejects.toMatchObject({ code: "BAD_RESPONSE" });
   });
+  it("accepts the grant's tighter slippage when the agent leaves it out", async () => {
+    const tight = {
+      ...response,
+      status: { ...status, maxSlippageBps: 30 },
+      action: { ...response.action, slippageBps: 30 },
+    };
+    const c = new BsktsClient({ fetch: async () => new Response(JSON.stringify(tight)) });
+    const p = { owner, key: agent.address, ticker: "INDEX2", side: "buy", amountUsdg: 5 } as const;
+    expect((await c.buildAgentTrade(p)).action.slippageBps).toBe(30);
+    await expect(c.buildAgentTrade({ ...p, slippageBps: 20 })).rejects.toMatchObject({
+      code: "BAD_RESPONSE",
+    });
+  });
   it("validates the pinned domain and parses action amounts as bigints", () => {
     expect(plan().action.nonce).toBe(123n);
     expect(() =>

@@ -1,0 +1,43 @@
+{
+  "name": "@bskts/create-agent",
+  "version": "0.0.0",
+  "description": "Set up a bskts trading agent in one command: npm create @bskts/agent. Writes a starter script and a fresh agent key to .env; the owner approves its limits in bskts.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "create-agent": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "keywords": [
+    "bskts",
+    "robinhood-chain",
+    "agent",
+    "create",
+    "scaffold"
+  ],
+  "homepage": "https://github.com/Tokenise-au/bskts-sdk/tree/main/packages/create-agent#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tokenise-au/bskts-sdk.git",
+    "directory": "packages/create-agent"
+  },
+  "bugs": "https://github.com/Tokenise-au/bskts-sdk/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "check:package": "publint"
+  },
+  "devDependencies": {
+    "viem": "^2.57.0"
+  }
+}

@@ -2,10 +2,11 @@
 
 Tools for trading [bskts](https://bskts.xyz), tokenized index baskets of Stock Tokens and crypto on Robinhood Chain, from code and from AI agents. Everything here is **non-custodial**: it reads the [bskts API](https://api.bskts.xyz) and builds unsigned transactions that your own wallet signs.
 
-| Package                      | What it is                                                                                                |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------- |
-| [`@bskts/sdk`](packages/sdk) | Typed TypeScript client: reads, unsigned buy / sell / order plans, dry runs, a policy guard, viem signing |
-| [`@bskts/mcp`](packages/mcp) | MCP server: the same as tools for Claude, ChatGPT, Cursor and other agents (stdio and Streamable HTTP)    |
+| Package                                        | What it is                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [`@bskts/sdk`](packages/sdk)                   | Typed TypeScript client: reads, unsigned buy / sell / order plans, dry runs, a policy guard, viem signing     |
+| [`@bskts/mcp`](packages/mcp)                   | MCP server: the same as tools for Claude, ChatGPT, Cursor and other agents (stdio and Streamable HTTP)        |
+| [`@bskts/create-agent`](packages/create-agent) | `npm create @bskts/agent`: a ready-to-run trading agent with its own key, approved once by the owner in bskts |
 
 No code at all? The REST API is plain JSON: [api.bskts.xyz/llms.txt](https://api.bskts.xyz/llms.txt) is the guide for agents, [openapi.json](https://api.bskts.xyz/openapi.json) the spec.
 
