@@ -17,8 +17,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const DRY = process.argv.includes("--dry-run");
-// dependencies first: the SDK before the MCP server
-const PACKAGES = ["packages/sdk", "packages/mcp"];
+// dependencies first: the SDK before the MCP server. 2026-10-04: create-agent
+// was missing, so its 0.2.0 was versioned and never staged (the release said
+// only "sdk, mcp: already on npm"). packages/create-agent/src/release.test.ts
+// now fails when a published package isn't listed here.
+const PACKAGES = ["packages/sdk", "packages/mcp", "packages/create-agent"];
 
 const run = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts });
