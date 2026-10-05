@@ -92,4 +92,11 @@ fresh key. On a 402 fee quote preserve nonce and trade terms, re-sign only
 the fee within the host's explicit fee cap. Never automatically replace an
 ambiguous submission with a new nonce.
 
+Persist the unsigned plan before the host signs or submits it. On restart,
+reconcile that original nonce and stop while it is unresolved. SDK 0.5.0 hosts
+can use `executeSessionOnce` with a durable store and `sessionActionState`;
+Node hosts can import `fileSessionStore` from `@bskts/sdk/node`. Keep completed
+records so restarting an operation cannot repeat its trade. MCP continues to
+return unsigned plans; persistence, signing and reconciliation belong to the host.
+
 Agent keys authorise account trading, including Weekend Cover when it is enabled. Cover spending is counted separately against the same daily limit; underwriting additionally requires the account owner’s allowance. Individual key revocation leaves existing Cover listings open: withdraw them in My cover. The API’s moduleEnabled/coverEnabled fields report the current account setup.

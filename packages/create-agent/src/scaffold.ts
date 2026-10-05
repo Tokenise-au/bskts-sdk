@@ -4,6 +4,7 @@
 // functions here (the chain read takes its transport); cli.ts does the
 // prompting, writing, installing and starting.
 import { randomBytes } from "node:crypto";
+import { agentTemplate } from "./agent-template";
 
 /** secp256k1's group order: a private key must be in [1, N). */
 const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
@@ -114,44 +115,7 @@ export async function walletOfAccount(
  * Nothing personal in it: the owner's address and the key are both in .env, so
  * the script can be committed or shared as it is. */
 export function agentScript(): string {
-  return `// agent.mjs — start it with: npm start (node --env-file=.env agent.mjs)
-import { BsktsClient, executeSession, sessionRelayer } from "@bskts/sdk";
-import { privateKeyToAccount } from "viem/accounts";
-
-const owner = process.env.BSKTS_OWNER; // your wallet, from .env
-if (!owner) throw new Error("No BSKTS_OWNER in .env: add your wallet address");
-if (!process.env.AGENT_KEY) throw new Error("No AGENT_KEY in .env");
-const agent = privateKeyToAccount(process.env.AGENT_KEY);
-const bskts = new BsktsClient();
-
-// waits here (up to 15 minutes) while you approve it in bskts, then trades once
-console.log("Checking the agent's approval in bskts...");
-let status = await bskts.agentSession({ owner, key: agent.address });
-if (!status.active) {
-  console.log("Agent address:", agent.address);
-  console.log("Approve it in bskts (opens with the address filled in):");
-  console.log(status.approvalUrl);
-  console.log("Waiting for your approval... (Ctrl+C to stop)");
-  for (let i = 0; i < 90 && !status.active; i++) {
-    await new Promise((r) => setTimeout(r, 10_000));
-    status = await bskts.agentSession({ owner, key: agent.address });
-  }
-  if (!status.active) throw new Error("Not approved within 15 minutes: run it again to keep waiting");
-  console.log("Approved. Buying $6 of INDEX2...");
-}
-
-// Your strategy goes here: decide what to trade. bskts.markets() has every
-// basket's price, 24h change and buy cost. This first agent makes one buy.
-const plan = await bskts.buildAgentTrade({
-  owner, key: agent.address, ticker: "INDEX2", side: "buy", amountUsdg: 6,
-});
-const receipt = await executeSession(
-  plan,
-  { key: agent.address, sign: (data) => agent.signTypedData(data), submit: sessionRelayer() },
-  { maxNetworkFeeUsdg: 250_000n }, // pay at most $0.25 network fee per trade
-);
-console.log("Bought INDEX2:", receipt.hash);
-`;
+  return agentTemplate();
 }
 
 /** Every file the starter writes, by path. Only .env holds the key and the
@@ -164,8 +128,8 @@ export function starterFiles(p: { name: string; owner: string; key: string }) {
         private: true,
         type: "module",
         scripts: { start: "node --env-file=.env agent.mjs" },
-        engines: { node: ">=20.6" },
-        dependencies: { "@bskts/sdk": "^0.4.1", viem: "^2.55.0" },
+        engines: { node: ">=20.19" },
+        dependencies: { "@bskts/sdk": "^0.5.0", viem: "^2.55.0" },
       },
       null,
       2,
@@ -179,7 +143,7 @@ BSKTS_OWNER=${p.owner}
 # Never share or commit this file.
 AGENT_KEY=${p.key}
 `,
-    ".gitignore": ".env\nnode_modules/\n",
+    ".gitignore": ".env\nnode_modules/\n.bskts-agent/\n",
     "README.md": `# ${p.name}
 
 A bskts trading agent, made with \`npm create @bskts/agent\`.
@@ -190,6 +154,12 @@ A bskts trading agent, made with \`npm create @bskts/agent\`.
 3. The script sees the approval and buys $6 of INDEX2 once.
 
 Then make it yours: replace the trade in \`agent.mjs\` with your own logic.
+The first trade's public plan and outcome stay in \`.bskts-agent/\`.
+Restarting checks that same nonce and never buys again automatically, even
+after success. Keep these files: deleting them removes the duplicate protection.
+An unresolved submission stops; restart to recheck it. An unused nonce at or
+before its deadline may still execute. Only after reconciliation should you
+use a new journal path for a deliberate new strategy trade.
 Guide: https://bskts.xyz/docs#agents · SDK: https://www.npmjs.com/package/@bskts/sdk
 
 \`.env\` holds your wallet address (\`BSKTS_OWNER\`) and the agent's key

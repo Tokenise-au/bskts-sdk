@@ -207,6 +207,46 @@ The SDK does **not** automatically retry a timeout: check
 `BsktsSessionModule.nonceUsed(account,nonce)` and the `Executed` event before
 resubmitting. Never rebuild a possibly submitted trade with a new nonce.
 
+For a process that can restart, use `executeSessionOnce` (SDK 0.5.0+) and one
+durable store per logical trade. It reserves the unsigned plan **before signing**,
+retains the original nonce across fee quotes, and records the successful receipt.
+Concurrent starts can only reserve one plan. A restart never signs or submits
+that operation again: it returns the recorded outcome or reconciles its nonce.
+Keys and signatures are never written to this store.
+
+```ts
+import { executeSessionOnce, sessionActionState, robinhood } from "@bskts/sdk";
+import { fileSessionStore } from "@bskts/sdk/node"; // Node only; no fs in the root SDK
+import { createPublicClient, http } from "viem";
+
+const chain = createPublicClient({ chain: robinhood, transport: http("https://bskts.xyz/rpc") });
+const result = await executeSessionOnce({
+  store: fileSessionStore(".bskts-agent/strategy-operation-001.json"),
+  sender, // same secure host callbacks as above
+  maxNetworkFeeUsdg: 250_000n,
+  build: () => client.buildAgentTrade({ owner, key, ticker: "INDEX2", side: "buy", amountUsdg: 6 }),
+  reconcile: (plan) => sessionActionState(chain, plan.action),
+});
+```
+
+Retain the journal and its `.result` file, including after success. Ignore
+`.bskts-agent/` in Git. Custom stores must make `reserve` an exclusive durable
+create; an ordinary overwrite does not prevent competing processes from trading.
+File storage is for processes sharing that filesystem; independent hosts need a
+shared store with the same guarantee. Partial/corrupt records fail closed.
+
+`sessionActionState` reads the pinned module at one RPC block on chain 4663.
+An unused nonce remains unresolved at or before its deadline, because a request
+may still be in flight. Read failures leave the record intact. A consumed nonce
+means no further submission is needed; it does not recover a transaction hash.
+An expired unused action is retained as a terminal outcome and is never replaced
+automatically. Reconcile the previous operation before choosing a new store ID
+for a deliberate new trade. Do not delete records to restart after an error.
+
+When delegated slippage is omitted, the API resolves it to the lower of 50 bps
+and the owner's grant maximum. The client checks that resolved value against
+`policy.maxSlippageBps`; explicit values over policy are refused before fetching.
+
 Daily turnover includes buys and sells, resets at 00:00 UTC, is separate for
 each key and excludes network fees (module hard ceiling $10 per Action).
 Revoking blocks new requests once confirmed; existing orders/schedules can

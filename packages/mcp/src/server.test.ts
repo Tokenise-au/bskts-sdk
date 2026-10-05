@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { BsktsClient, type Policy } from "@bskts/sdk";
+import { BsktsClient, schemas, type Policy } from "@bskts/sdk";
 import { describe, expect, it } from "vitest";
 import { createBsktsMcpHandler, createBsktsServer, VERSION } from "./index";
 import pkg from "../package.json" with { type: "json" };
@@ -183,6 +183,59 @@ describe("bskts MCP server", () => {
 });
 
 describe("delegated agent MCP", () => {
+  it.each([25, 50])("checks resolved slippage %s against a 25 bps host policy", async (slip) => {
+    const relayerUrl = "https://bskts.xyz/relay/v1/account/execute";
+    const response = {
+      ticker: "INDEX2",
+      status: {
+        owner: ADDR,
+        account: ADDR,
+        key: ADDR,
+        chainId: 4663,
+        module: schemas.SESSION_MODULE,
+        deployed: true,
+        moduleEnabled: true,
+        coverEnabled: false,
+        active: true,
+        paused: false,
+        usdgWei: "100000000",
+        dailyLimitUsdg: "10000000",
+        remainingTodayUsdg: "10000000",
+        maxSlippageBps: slip,
+        validUntil: 2000000000,
+        approvalUrl: "https://bskts.xyz/portfolio?p=agents",
+        relayerUrl,
+        revokeEffect: "Cancel existing orders separately.",
+      },
+      action: {
+        account: ADDR,
+        key: ADDR,
+        kind: 0,
+        vault: "0xC02b7A59846B77d0b1d0cfE8943D32c279ED292a",
+        amount: "100000000000000",
+        limit: "5000000",
+        slippageBps: slip,
+        data: "0x",
+        nonce: "123",
+        deadline: 1900000000,
+        fee: "0",
+      },
+      relayerUrl,
+      simulation: { ok: null, skipped: "Unsigned" },
+    };
+    const { client, calls } = api({ "/v1/agent/trade": response }, { maxSlippageBps: 25 });
+    const result = await (
+      await connect(client)
+    ).callTool({
+      name: "bskts_agent_trade",
+      arguments: { owner: ADDR, key: ADDR, ticker: "INDEX2", side: "buy", amountUsdg: 5 },
+    });
+    expect(calls).toHaveLength(1);
+    if (slip === 25) {
+      expect(result.isError).not.toBe(true);
+      expect(text(result).action.slippageBps).toBe(25);
+    } else expect(result.isError).toBe(true);
+  });
   it("reads live permissions and exposes no signing, grant or execution tools", async () => {
     const { client } = api({});
     const mcp = await connect(client);

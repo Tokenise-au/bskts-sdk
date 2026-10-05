@@ -215,7 +215,7 @@ export class BsktsClient {
   ) {
     checkPolicy(this.policy, {
       ticker: p.ticker,
-      slippageBps: p.slippageBps ?? 50,
+      slippageBps: p.slippageBps,
       ...(p.side === "buy" ? { usd: p.amountUsdg } : {}),
     });
     if (p.side === "buy" && this.policy.maxBuyCostBps != null) {
@@ -240,6 +240,9 @@ export class BsktsClient {
         : plan.action.amount !== p.shares)
     )
       throw new BsktsError("Agent plan does not match the requested trade.", "BAD_RESPONSE");
+    // 2026-10-05: omission is resolved against the owner's grant by the API.
+    // A fixed 50 rejected valid tight grants; check the effective value too.
+    checkPolicy(this.policy, { slippageBps: plan.action.slippageBps });
     if (p.side === "sell" && this.policy.maxUsdPerTrade != null) {
       const detail = await this.basket(p.ticker);
       checkPolicy(this.policy, { usd: (Number(plan.action.amount) / 1e18) * (detail.nav ?? 0) });

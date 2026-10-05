@@ -107,7 +107,9 @@ describe("files", () => {
       type: "module",
       scripts: { start: "node --env-file=.env agent.mjs" },
     });
-    expect(pkg.dependencies["@bskts/sdk"]).toMatch(/^\^0\.4\./);
+    expect(pkg.dependencies["@bskts/sdk"]).toBe("^0.5.0");
+    expect(pkg.engines.node).toBe(">=20.19");
+    expect(files[".gitignore"]).toContain(".bskts-agent/");
   });
   it("reads the owner from .env, waits for approval and caps the network fee", () => {
     const script = agentScript();
