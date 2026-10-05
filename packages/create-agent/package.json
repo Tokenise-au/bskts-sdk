@@ -1,6 +1,6 @@
 {
   "name": "@bskts/create-agent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Set up a bskts trading agent in one command: npm create @bskts/agent. Writes a starter script and a fresh agent key to .env; the owner approves its limits in bskts.",
   "license": "MIT",
   "type": "module",
