@@ -1,5 +1,11 @@
 # @bskts/sdk
 
+## 0.4.2
+
+### Patch Changes
+
+- d079ce3: Bind delegated agent plans to reviewed basket vault addresses, and recheck the binding before signing. Reject mismatched and unknown baskets rather than trusting a response's ticker label.
+
 ## 0.4.1
 
 ### Patch Changes
