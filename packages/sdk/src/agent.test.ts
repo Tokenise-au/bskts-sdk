@@ -64,6 +64,18 @@ const sender = (submit: SessionSender["submit"] = async () => receipt): SessionS
   submit: vi.fn(submit),
 });
 describe("agent execution", () => {
+  it.each(["otherVault", "unknownTicker", "prototypeTicker"])(
+    "refuses %s before invoking the signer or submitting",
+    async (mode) => {
+      const p = plan();
+      const s = sender();
+      if (mode === "otherVault") p.action.vault = "0x63e5dFBEC475b3afA031be9031e73aCdb6F1d559";
+      else p.ticker = mode === "unknownTicker" ? "NEW" : "constructor";
+      await expect(executeSession(p, s, opts())).rejects.toMatchObject({ code: "BAD_RESPONSE" });
+      expect(s.sign).not.toHaveBeenCalled();
+      expect(s.submit).not.toHaveBeenCalled();
+    },
+  );
   it("only the caller's matching signer signs, with the pinned chain/domain", async () => {
     const s = sender();
     expect(await executeSession(plan(), s, opts())).toEqual(receipt);
@@ -305,6 +317,43 @@ describe("session transport and responses", () => {
         amountUsdg: 5,
       }),
     ).rejects.toMatchObject({ code: "BAD_RESPONSE" });
+  });
+  it.each(["0x63e5dFBEC475b3afA031be9031e73aCdb6F1d559", owner])(
+    "refuses an INDEX2 response with substituted vault %s even under an allowlist",
+    async (swapped) => {
+      const c = new BsktsClient({
+        policy: { allowedTickers: ["INDEX2"] },
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              ...response,
+              action: { ...response.action, vault: swapped },
+            }),
+          ),
+      });
+      await expect(
+        c.buildAgentTrade({
+          owner,
+          key: agent.address,
+          ticker: "INDEX2",
+          side: "buy",
+          amountUsdg: 6,
+        }),
+      ).rejects.toMatchObject({ code: "BAD_RESPONSE" });
+    },
+  );
+  it("accepts case-insensitive pinned addresses and rejects unknown baskets", () => {
+    expect(
+      schemas.agentTradePlan.parse({
+        ...response,
+        ticker: "index2",
+        action: { ...response.action, vault: vault.toLowerCase() },
+      }).ticker,
+    ).toBe("index2");
+    for (const ticker of ["NEW", "constructor", "__proto__"])
+      expect(() => schemas.agentTradePlan.parse({ ...response, ticker })).toThrow(
+        /reviewed basket/,
+      );
   });
   it("accepts the grant's tighter slippage when the agent leaves it out", async () => {
     const tight = {

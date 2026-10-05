@@ -10,6 +10,7 @@
 // - dollars, NAVs and fractions stay `number`.
 import type { Address, Hex } from "viem";
 import { z } from "zod";
+import { isAgentVault } from "./agent-vaults";
 
 export const address = z
   .string()
@@ -330,13 +331,18 @@ export const sessionAction = z.object({
     .max(2 ** 48 - 1),
   fee: uint256.refine((n) => n <= 10_000_000n),
 });
-export const agentTradePlan = z.object({
-  ticker: z.string(),
-  status: agentSession,
-  action: sessionAction,
-  relayerUrl: z.literal("https://bskts.xyz/relay/v1/account/execute"),
-  simulation,
-});
+export const agentTradePlan = z
+  .object({
+    ticker: z.string(),
+    status: agentSession,
+    action: sessionAction,
+    relayerUrl: z.literal("https://bskts.xyz/relay/v1/account/execute"),
+    simulation,
+  })
+  .refine((plan) => isAgentVault(plan.ticker, plan.action.vault), {
+    message: "Action vault does not match the reviewed basket address; upgrade for new baskets.",
+    path: ["action", "vault"],
+  });
 export const sessionReceipt = z.object({
   hash: hex.refine((h) => /^0x[0-9a-fA-F]{64}$/.test(h)),
   blockNumber: z.number().int().nonnegative(),

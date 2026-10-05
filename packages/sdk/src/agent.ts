@@ -1,5 +1,6 @@
 import { recoverTypedDataAddress, type Address, type Hex } from "viem";
 import { BsktsError, type ErrorCode } from "./errors";
+import { isAgentVault } from "./agent-vaults";
 import {
   SESSION_MODULE,
   sessionReceipt,
@@ -143,6 +144,13 @@ export async function executeSession(
   options: { maxNetworkFeeUsdg: bigint; fees?: FeeMemory | false },
 ): Promise<SessionReceipt> {
   const maxFee = options.maxNetworkFeeUsdg;
+  // 2026-10-05: hosts can pass parsed plans directly, or mutate a client plan.
+  // Recheck the reviewed vault binding before any signer callback runs.
+  if (!isAgentVault(plan.ticker, plan.action.vault))
+    throw new BsktsError(
+      "Action vault does not match the reviewed basket address.",
+      "BAD_RESPONSE",
+    );
   const fees = options.fees === false ? undefined : (options.fees ?? processFees);
   if (maxFee < 0n || maxFee > 10_000_000n)
     throw new BsktsError("Set a network fee ceiling between $0 and $10.", "POLICY");

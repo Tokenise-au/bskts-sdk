@@ -187,6 +187,14 @@ Session plans are unsigned, so `simulation.ok` is null. The relayer simulates
 the signed Action before broadcasting. A 402 `requiredFee` is re-signed only
 within the host's fee cap, retaining the same nonce, deadline and trade terms.
 
+Delegated plans bind their basket ticker to the reviewed vault addresses in
+`src/agent-vaults.json`. The client rejects a mismatched API response, and
+`executeSession` checks again before signing, including plans supplied directly
+or changed after parsing. Unknown or redeployed baskets require an SDK upgrade;
+addresses never change automatically from a trade response. Maintainers update
+the pins from `/v1/baskets` only after comparing them with the main repository's
+canonical `src/lib/contracts.ts`, and ship the reviewed change with a changeset.
+
 `executeSession` remembers the fee each kind of trade on each basket last
 needed (the relayer quotes on success too) and signs the next one with it, so
 a repeat trade is one signature and one relayer round trip. A plan built with
