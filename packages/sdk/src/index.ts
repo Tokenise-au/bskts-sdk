@@ -30,3 +30,5 @@ export {
   SESSION_ACTION_TYPES,
 } from "./agent";
 export type { AgentTypedData, FeeMemory, SessionSender } from "./agent";
+export { executeSessionOnce, sessionActionState } from "./session-once";
+export type { SessionStore, SessionPending, SessionOutcome } from "./session-once";

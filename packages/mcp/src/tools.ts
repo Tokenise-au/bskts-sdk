@@ -246,7 +246,7 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
     {
       title: "Build a delegated agent trade",
       description:
-        "Build an UNSIGNED buy/sell Action inside owner-approved permissions. Returns action, typedData and relayer URL. The agent host's matching session signer signs typedData; POST {action,signature} to the relayer. No wallet approval per trade, no ETH. A 402 fee quote requires a new signature within the host's explicit fee cap; preserve nonce and all trade terms. Never retry ambiguous timeouts with a new nonce. Existing wallet/order tools are a separate path.",
+        "Build an UNSIGNED buy/sell Action inside owner-approved permissions. Returns action, typedData and relayer URL. The agent host's matching session signer signs typedData; POST {action,signature} to the relayer. No wallet approval per trade, no ETH. A 402 fee quote requires a new signature within the host's explicit fee cap; preserve nonce and all trade terms. Persist the unsigned plan before signing; on restart reconcile its original nonce and stop while unresolved. SDK hosts can use executeSessionOnce with a durable store. Never retry ambiguous timeouts with a new nonce. Existing wallet/order tools are a separate path.",
       inputSchema: {
         owner: address,
         key: address,

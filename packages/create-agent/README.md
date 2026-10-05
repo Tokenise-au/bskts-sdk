@@ -22,7 +22,15 @@ It creates `bskts-agent/`, installs it, and starts the agent:
   keeps the file out of git. Keep it private: anyone with the key can trade within the limits you
   approved, until you revoke the agent in bskts. It can never withdraw.
 
-Run it again later with `npm start` in the folder. Options:
+Run it again later with `npm start` in the folder. The first buy's record stays
+in `.bskts-agent/` (Git ignored): restarting reconciles that nonce and never
+buys again automatically, including after a lost response or confirmed success.
+Keep these files. If the outcome is unresolved, restart to recheck it; never
+delete the record or change its ID to retry. After reconciliation, your strategy
+can choose a new journal path for a deliberate new trade. This starter requires
+SDK 0.5.0 and Node 20.19 or newer.
+
+Options:
 `npm create @bskts/agent my-folder -- --owner 0x… --no-install --no-start`.
 
 The agent trades from your bskts account within the daily turnover, slippage and expiry you
