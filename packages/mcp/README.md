@@ -70,12 +70,14 @@ MIT
 
 ## Autonomous account path
 
-Two additional unsigned tools expose delegated accounts:
+Four additional unsigned tools expose delegated accounts:
 
 | Tool                  | Purpose                                                                                                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bskts_agent_session` | Resolve the owner's account and read a public agent key's active status, USDG, daily remaining turnover, slippage and expiry. Returns owner approval and relayer URLs. |
 | `bskts_agent_trade`   | Build a buy/sell Action with EIP-712 typedData inside the owner's live limits. The host's matching session signer signs and submits it.                                |
+| `bskts_cover`         | Weekend Cover reads: the weeks a session may buy, a basket's offers by range with payout history and a quote, an account's cover and payouts.                          |
+| `bskts_agent_cover`   | Build a cover purchase (take offers, request cover, or cancel the account's listing) with typedData under the cover module's own domain. Never underwrites.            |
 
 Create the signing key in your agent host wallet/secure signer; share only its
 public address. The owner connects that address in Portfolio once, reviews

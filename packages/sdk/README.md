@@ -256,3 +256,38 @@ The MCP exposes `bskts_agent_session` and `bskts_agent_trade` for the same
 flow. It stays unsigned: your agent host must supply the signer and submitter.
 
 Agent keys authorise account trading, including Weekend Cover when it is enabled. Cover spending is counted separately against the same daily limit; underwriting additionally requires the account owner’s allowance. Individual key revocation leaves existing Cover listings open: withdraw them in My cover. The API’s moduleEnabled/coverEnabled fields report the current account setup.
+
+### Weekend Cover (SDK 0.6.0+)
+
+Agents can **buy** Weekend Cover on a basket the account holds, from the same key, once the
+owner has turned Cover on (`coverEnabled`). Cover pays the weekend drop between `fromBps` and
+`toBps` (300-1000: from -3%, in full at -10%). A session pays at most 3% of the cover (premium +
+fee), and cover counts against its own daily limit, apart from trades. Agents never underwrite.
+
+```ts
+import { coverActionState, coverRelayer, executeCoverOnce, type CoverPending } from "@bskts/sdk";
+import { fileSessionStore } from "@bskts/sdk/node";
+
+const book = await client.coverBook("DIGI64", { coverUsd: 1000, fromBps: 300, toBps: 1000 });
+// book.ranges[0].quote.cost, and history.fairPer1k: what the range paid on an average weekend
+const result = await executeCoverOnce({
+  store: fileSessionStore<CoverPending>(".bskts-agent/cover-digi64-001.json"),
+  sender: { key, sign: (td) => signer.signTypedData(td), submit: coverRelayer() },
+  maxNetworkFeeUsdg: 250_000n,
+  build: () =>
+    client.buildAgentCover({
+      owner,
+      key,
+      action: "take",
+      ticker: "DIGI64",
+      fromBps: 300,
+      toBps: 1000,
+      coverUsd: 1000,
+    }),
+  reconcile: (plan) => coverActionState(chain, plan.action),
+});
+```
+
+`buildAgentCover` also takes `action: "request"` (with `pricePer1k`, locking the premium until
+an underwriter fills it) and `action: "cancel"` (with `listingId`, free). `coverPositions(account)`
+shows the cover held and its payouts, which the keeper makes automatically.
