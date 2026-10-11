@@ -29,8 +29,9 @@ const USAGE = `bskts skill CLI. Commands (all print JSON):
   markets                    every basket: NAV, 24h change, buy cost
   basket TICKER              one basket: thesis, constituents, risk
   positions                  the bskts account's holdings and PnL
-  buy TICKER USD --id ID [--slippage BPS] [--dry]
-  sell TICKER (--shares WEI|max | --fraction 0.5) --id ID [--slippage BPS] [--dry]
+  buy TICKER USD [--slippage BPS]                          dry run: builds and simulates, sends nothing
+  sell TICKER (--shares WEI|max | --fraction 0.5) [...]     dry run
+  buy|sell ... --send --id ID                               the live trade, once per ID
   trade-status --id ID       outcome of a journalled trade, never sends anything
 Home: ${HOME} (set BSKTS_AGENT_HOME to move it).`;
 
@@ -55,7 +56,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (!a.startsWith("--")) pos.push(a);
     else if (a.includes("=")) flags[a.slice(2, a.indexOf("="))] = a.slice(a.indexOf("=") + 1);
-    else if (a === "--dry") flags.dry = true;
+    else if (a === "--dry" || a === "--send") flags[a.slice(2)] = true;
     else flags[a.slice(2)] = argv[++i];
   }
   return { pos, flags };
@@ -81,7 +82,7 @@ function ownerAddress(value) {
 function tradeId(v) {
   if (!v)
     throw new CliError(
-      "--id is required for a live trade: a new ID per deliberate trade, e.g. buy-index2-2026-10-10a.",
+      "--send needs --id: a new ID per deliberate trade, e.g. buy-index2-20261010-1.",
     );
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(v))
     throw new CliError("--id may use a-z, 0-9 and '-', up to 64 characters.");
@@ -284,7 +285,12 @@ function trade(side) {
         if (!(amountUsdg > 0))
           throw new CliError("buy TICKER USD: USD is a dollar amount, e.g. 10.");
       }
-      const id = flags.dry ? null : tradeId(flags.id);
+      // 2026-10-11: dry run unless --send (owner: "replace the starter and the
+      // skill with dry run logic"). Live used to be the default and --dry the
+      // opt-in, so a model that dropped one flag spent real money.
+      if (flags.send && flags.dry) throw new CliError("Use --send or --dry, not both.");
+      const live = flags.send === true;
+      const id = live ? tradeId(flags.id) : null;
       const store = id && fileSessionStore(join(TRADES_DIR, `${id}.json`));
 
       const build = async () => {
@@ -309,9 +315,15 @@ function trade(side) {
             });
       };
 
-      if (flags.dry) {
+      if (!live) {
         const plan = await build();
-        return out({ ok: true, dry: true, sent: false, ...planView(plan, side) });
+        return out({
+          ok: true,
+          dry: true,
+          sent: false,
+          ...planView(plan, side),
+          next: "Dry run only. To trade for real: the same command with --send --id <new id>.",
+        });
       }
 
       // A journal that already exists means this ID was used: report it, never trade again.
