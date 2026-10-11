@@ -127,7 +127,10 @@ export function starterFiles(p: { name: string; owner: string; key: string }) {
         name: p.name,
         private: true,
         type: "module",
-        scripts: { start: "node --env-file=.env agent.mjs" },
+        scripts: {
+          start: "node --env-file=.env agent.mjs",
+          live: "node --env-file=.env agent.mjs --live",
+        },
         engines: { node: ">=20.19" },
         dependencies: { "@bskts/sdk": "^0.5.0", viem: "^2.55.0" },
       },
@@ -151,10 +154,12 @@ A bskts trading agent, made with \`npm create @bskts/agent\`.
 1. \`npm start\` prints the agent's address and an approval link.
 2. Open the link (bskts.xyz → Portfolio → Agents, address filled in), check the
    daily limit, slippage and expiry, and approve with your wallet.
-3. The script sees the approval and buys $6 of INDEX2 once.
+3. The script sees the approval and DRY RUNS a $6 buy of INDEX2: it builds the
+   trade, bskts simulates it from your account, and nothing is sent.
+4. \`npm run live\` sends that buy for real, once.
 
 Then make it yours: replace the trade in \`agent.mjs\` with your own logic.
-The first trade's public plan and outcome stay in \`.bskts-agent/\`.
+The live trade's public plan and outcome stay in \`.bskts-agent/\`.
 Restarting checks that same nonce and never buys again automatically, even
 after success. Keep these files: deleting them removes the duplicate protection.
 An unresolved submission stops; restart to recheck it. An unused nonce at or

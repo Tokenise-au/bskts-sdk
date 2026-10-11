@@ -11,7 +11,12 @@ import { agentTemplate } from "./agent-template";
 // 2026-10-05: execute the generated source twice against a fake chain and
 // relayer, retaining real journal files. A text assertion missed repeat buys.
 describe("generated agent restarts", () => {
-  it.each([false, true])("does not repeat the first buy after response lost=%s", async (lost) => {
+  // 2026-10-11: npm start is a dry run; only --live (npm run live) sends.
+  it.each([
+    { live: true, lost: false },
+    { live: true, lost: true },
+    { live: false, lost: false },
+  ])("live=$live lost=$lost: at most one buy, and none without --live", async ({ live, lost }) => {
     const directory = mkdtempSync(join(tmpdir(), "bskts-starter-restart-"));
     const path = join(directory, "trade.json");
     const agent = privateKeyToAccount(generatePrivateKey());
@@ -69,7 +74,10 @@ describe("generated agent restarts", () => {
     const source = agentTemplate().replace(/^import .*;\r?\n/gm, "");
     const run = () =>
       runInNewContext(`(async () => {${source}})()`, {
-        process: { env: { BSKTS_OWNER: owner, AGENT_KEY: "test-marker" } },
+        process: {
+          env: { BSKTS_OWNER: owner, AGENT_KEY: "test-marker" },
+          argv: ["node", "agent.mjs", ...(live ? ["--live"] : [])],
+        },
         privateKeyToAccount: () => agent,
         BsktsClient: class {
           agentSession = permission;
@@ -95,10 +103,18 @@ describe("generated agent restarts", () => {
       if (lost) await expect(run()).rejects.toMatchObject({ code: "NETWORK" });
       else await run();
       await run();
-      expect(submit).toHaveBeenCalledTimes(1);
-      expect(build).toHaveBeenCalledTimes(1);
-      expect(permission).toHaveBeenCalledTimes(1);
-      if (lost) expect(messages.flat().join(" ")).toContain("no additional trade");
+      if (live) {
+        expect(submit).toHaveBeenCalledTimes(1);
+        expect(build).toHaveBeenCalledTimes(1);
+        expect(permission).toHaveBeenCalledTimes(1);
+        if (lost) expect(messages.flat().join(" ")).toContain("no additional trade");
+      } else {
+        // each dry run builds and simulates; nothing is signed, sent or journalled
+        expect(submit).not.toHaveBeenCalled();
+        expect(build).toHaveBeenCalledTimes(2);
+        expect(existsSync(path)).toBe(false);
+        expect(messages.flat().join(" ")).toContain("Nothing was sent");
+      }
     } finally {
       for (const file of [path, `${path}.result`]) if (existsSync(file)) unlinkSync(file);
       rmdirSync(directory);

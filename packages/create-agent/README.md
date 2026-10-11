@@ -15,14 +15,16 @@ It creates `bskts-agent/`, installs it, and starts the agent:
 
 - `agent.mjs`: a first agent. It prints its address and a link that opens bskts → Portfolio →
   Agents with the address filled in, waits while you approve its limits with your wallet, then
-  buys $6 of INDEX2 once. Replace that trade with your own logic. It holds nothing personal, so
-  you can commit or share it.
+  dry runs a $6 buy of INDEX2: bskts simulates it from your account and nothing is sent.
+  `npm run live` sends it, once. Replace that trade with your own logic. It holds nothing
+  personal, so you can commit or share it.
 - `.env`: your wallet address (`BSKTS_OWNER`) and the agent's new private key (`AGENT_KEY`),
   generated on your machine. The key is never shown, logged or sent anywhere, and `.gitignore`
   keeps the file out of git. Keep it private: anyone with the key can trade within the limits you
   approved, until you revoke the agent in bskts. It can never withdraw.
 
-Run it again later with `npm start` in the folder. The first buy's record stays
+Approving the agent is not a trade: nothing is bought until you run `npm run live`.
+Run either again later in the folder. The live buy's record stays
 in `.bskts-agent/` (Git ignored): restarting reconciles that nonce and never
 buys again automatically, including after a lost response or confirmed success.
 Keep these files. If the outcome is unresolved, restart to recheck it; never
