@@ -11,11 +11,15 @@ import {
   type SessionAction,
 } from "./schemas";
 
-const pending = z.object({
-  version: z.literal(1),
-  plan: agentTradePlan,
-  maxNetworkFeeUsdg: wei.refine((n) => n <= 10_000_000n),
-});
+/** A journal record: the unsigned plan and the fee ceiling it may be signed
+ * with. Trades and cover (2026-10-11) share the shape; each parses only its own. */
+export const journalOf = <P extends z.ZodType>(plan: P) =>
+  z.object({
+    version: z.literal(1),
+    plan,
+    maxNetworkFeeUsdg: wei.refine((n) => n <= 10_000_000n),
+  });
+const pending = journalOf(agentTradePlan);
 const outcome = z.discriminatedUnion("state", [
   z.object({ state: z.literal("confirmed"), receipt: sessionReceipt }),
   z.object({ state: z.literal("consumed") }),
@@ -23,16 +27,17 @@ const outcome = z.discriminatedUnion("state", [
 ]);
 export type SessionPending = z.infer<typeof pending>;
 export type SessionOutcome = z.infer<typeof outcome>;
-/** One durable store per logical trade. reserve must exclusively create the
- * record, durably, before returning true. Never store keys or signatures.
+/** One durable store per logical operation. reserve must exclusively create
+ * the record, durably, before returning true. Never store keys or signatures.
  * Records and outcomes are retained: a completed operation is never rerun. */
-export interface SessionStore {
+export interface JournalStore<R> {
   load(): Promise<unknown | undefined>;
   loadOutcome(): Promise<unknown | undefined>;
-  reserve(record: SessionPending): Promise<boolean>;
+  reserve(record: R): Promise<boolean>;
   complete(result: SessionOutcome): Promise<void>;
 }
-const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
+export type SessionStore = JournalStore<SessionPending>;
+export const parseJournal = <T>(schema: z.ZodType<T>, value: unknown): T => {
   // Parsed plans have bigints; disk records have integer strings. Normalise
   // both through the same response schemas before trusting a journal.
   let input: unknown;
@@ -78,17 +83,19 @@ export async function sessionActionState(
   return used ? "consumed" : block.timestamp > BigInt(action.deadline) ? "expired" : "pending";
 }
 
-/** Execute one logical trade at most once. A restart reconciles the stored
- * nonce, and never signs, resubmits or builds a replacement. Use a new store
- * only for a deliberate new trade after resolving the previous operation. */
-export async function executeSessionOnce(options: {
-  store: SessionStore;
-  build(): Promise<AgentTradePlan>;
-  sender: SessionSender;
+/** The once-only runner behind executeSessionOnce and executeCoverOnce. */
+export async function runOnce<
+  P extends { action: { key: string; account: string; nonce: bigint } },
+>(options: {
+  store: JournalStore<{ version: 1; plan: P; maxNetworkFeeUsdg: bigint }>;
+  schema: z.ZodType<{ version: 1; plan: P; maxNetworkFeeUsdg: bigint }>;
+  build(): Promise<P>;
+  signerKey: string;
   maxNetworkFeeUsdg: bigint;
-  reconcile(plan: AgentTradePlan): Promise<"pending" | "consumed" | "expired">;
+  reconcile(plan: P): Promise<"pending" | "consumed" | "expired">;
+  run(plan: P, maxNetworkFeeUsdg: bigint): Promise<z.infer<typeof sessionReceipt>>;
 }): Promise<SessionOutcome> {
-  const { store, sender } = options;
+  const { store, schema } = options;
   let saved = await store.load();
   let fresh = false;
   if (saved === undefined) {
@@ -97,7 +104,7 @@ export async function executeSessionOnce(options: {
         "Session outcome has no matching journal; do not build a replacement.",
         "BAD_RESPONSE",
       );
-    const record = parse(pending, {
+    const record = parseJournal(schema, {
       version: 1,
       plan: await options.build(),
       maxNetworkFeeUsdg: options.maxNetworkFeeUsdg,
@@ -107,14 +114,14 @@ export async function executeSessionOnce(options: {
     fresh = await store.reserve(record);
     saved = fresh ? record : await store.load();
   }
-  const record = parse(pending, saved);
-  if (record.plan.action.key.toLowerCase() !== sender.key.toLowerCase())
+  const record = parseJournal(schema, saved);
+  if (record.plan.action.key.toLowerCase() !== options.signerKey.toLowerCase())
     throw new BsktsError(
       "Journal belongs to another signing key; do not replace it.",
       "BAD_RESPONSE",
     );
   const completed = await store.loadOutcome();
-  if (completed !== undefined) return parse(outcome, completed);
+  if (completed !== undefined) return parseJournal(outcome, completed);
   const nonce = record.plan.action.nonce.toString();
   if (!fresh) {
     const state = await options.reconcile(record.plan);
@@ -128,10 +135,8 @@ export async function executeSessionOnce(options: {
     return result;
   }
   try {
-    const receipt = await executeSession(record.plan, sender, {
-      maxNetworkFeeUsdg: record.maxNetworkFeeUsdg,
-    });
-    const result = parse(outcome, { state: "confirmed", receipt });
+    const receipt = await options.run(record.plan, record.maxNetworkFeeUsdg);
+    const result = parseJournal(outcome, { state: "confirmed", receipt });
     await store.complete(result);
     return result;
   } catch (e) {
@@ -143,4 +148,25 @@ export async function executeSessionOnce(options: {
       { cause: e },
     );
   }
+}
+
+/** Execute one logical trade at most once. A restart reconciles the stored
+ * nonce, and never signs, resubmits or builds a replacement. Use a new store
+ * only for a deliberate new trade after resolving the previous operation. */
+export function executeSessionOnce(options: {
+  store: SessionStore;
+  build(): Promise<AgentTradePlan>;
+  sender: SessionSender;
+  maxNetworkFeeUsdg: bigint;
+  reconcile(plan: AgentTradePlan): Promise<"pending" | "consumed" | "expired">;
+}): Promise<SessionOutcome> {
+  return runOnce({
+    store: options.store,
+    schema: pending,
+    build: options.build,
+    signerKey: options.sender.key,
+    maxNetworkFeeUsdg: options.maxNetworkFeeUsdg,
+    reconcile: options.reconcile,
+    run: (plan, maxNetworkFeeUsdg) => executeSession(plan, options.sender, { maxNetworkFeeUsdg }),
+  });
 }

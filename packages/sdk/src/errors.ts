@@ -14,6 +14,10 @@ export type ErrorCode =
   | "NOT_IMPLEMENTED"
   | "UPSTREAM"
   | "SERVER"
+  // Weekend Cover (2026-10-11)
+  | "NOT_A_HOLDER" // more cover than the account holds of the basket
+  | "NO_COVER" // no offer on that range at or under the price, or not enough of it
+  | "COVER_CLOSED" // the week is closed to the session, or too far ahead
   // from the SDK
   | "FEE_REQUIRED"
   | "SESSION_INACTIVE"

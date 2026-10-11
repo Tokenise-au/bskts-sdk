@@ -32,7 +32,14 @@ const USAGE = `bskts skill CLI. Commands (all print JSON):
   buy TICKER USD [--slippage BPS]                          dry run: builds and simulates, sends nothing
   sell TICKER (--shares WEI|max | --fraction 0.5) [...]     dry run
   buy|sell ... --send --id ID                               the live trade, once per ID
-  trade-status --id ID       outcome of a journalled trade, never sends anything
+  trade-status --id ID       outcome of a journalled trade or cover action, never sends anything
+Weekend Cover (buying only; the owner must have turned Cover on). Actions dry run unless --send --id:
+  cover-weeks                weeks open to buy, terms, limits, preset ranges
+  cover-book TICKER [--cover USD] [--from BPS --to BPS] [--week N]
+  cover-positions            the account's cover, payouts and open listings
+  cover-buy TICKER USD --from BPS --to BPS [--max-price P] [--partial] [--week N]
+  cover-request TICKER USD --from BPS --to BPS --price P [--week N]
+  cover-cancel LISTING_ID
 Home: ${HOME} (set BSKTS_AGENT_HOME to move it).`;
 
 // ---- small helpers ----------------------------------------------------------
@@ -56,7 +63,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (!a.startsWith("--")) pos.push(a);
     else if (a.includes("=")) flags[a.slice(2, a.indexOf("="))] = a.slice(a.indexOf("=") + 1);
-    else if (a === "--dry" || a === "--send") flags[a.slice(2)] = true;
+    else if (a === "--dry" || a === "--send" || a === "--partial") flags[a.slice(2)] = true;
     else flags[a.slice(2)] = argv[++i];
   }
   return { pos, flags };
@@ -383,6 +390,158 @@ const tradeStatus = (_, flags) =>
     });
   });
 
+// ---- Weekend Cover (2026-10-11) --------------------------------------------
+// Buying only: take offers, request cover, cancel the account's own listing.
+// Same key, same journal guard as trades (executeCoverOnce, one file per --id,
+// in the same folder, so trade-status reports both). Underwriting is never an
+// agent action: it needs the owner's own allowance.
+
+function needsCoverSdk(sdk) {
+  if (typeof sdk.executeCoverOnce !== "function")
+    throw new CliError(
+      "This skill's @bskts/sdk predates Weekend Cover. Update the skill (it needs @bskts/sdk 0.6.0 or later).",
+      "SETUP_FAILED",
+    );
+}
+const int = (v, name) => {
+  const n = Number(v);
+  if (v == null || v === "" || !Number.isInteger(n) || n < 0)
+    throw new CliError(`${name} must be a whole number.`);
+  return n;
+};
+const opt = (k, v) => (v === undefined ? {} : { [k]: v });
+
+const coverWeeks = async () => {
+  const { sdk, client } = await load();
+  needsCoverSdk(sdk);
+  out({ ok: true, ...(await client.coverWeeks()) });
+};
+
+const coverBook = (pos, flags) =>
+  withAgent(async ({ sdk, client, owner, agent }) => {
+    needsCoverSdk(sdk);
+    const ticker = String(pos[1] ?? "").toUpperCase();
+    if (!/^[A-Z0-9]{2,12}$/.test(ticker)) throw new CliError("cover-book TICKER");
+    if ((flags.from == null) !== (flags.to == null))
+      throw new CliError("Pass --from and --to together (basis points of a drop, e.g. 300 1000).");
+    const s = await client.agentSession({ owner, key: agent.address });
+    out({
+      ok: true,
+      ...(await client.coverBook(ticker, {
+        account: s.account,
+        ...opt("coverUsd", flags.cover == null ? undefined : int(flags.cover, "--cover")),
+        ...opt("fromBps", flags.from == null ? undefined : int(flags.from, "--from")),
+        ...opt("toBps", flags.to == null ? undefined : int(flags.to, "--to")),
+        ...opt("week", flags.week == null ? undefined : int(flags.week, "--week")),
+      })),
+    });
+  });
+
+const coverPositions = () =>
+  withAgent(async ({ sdk, client, owner, agent }) => {
+    needsCoverSdk(sdk);
+    const s = await client.agentSession({ owner, key: agent.address });
+    out({ ok: true, ...(await client.coverPositions(s.account)) });
+  });
+
+function coverView(plan) {
+  return {
+    intent: plan.intent,
+    ...opt("ticker", plan.ticker),
+    ...opt("week", plan.week),
+    ...opt("fromBps", plan.fromBps),
+    ...opt("toBps", plan.toBps),
+    ...plan.summary,
+    coverRemainingTodayUsdg: usd6(plan.coverRemainingTodayUsdg),
+    simulation: plan.simulation,
+  };
+}
+
+function cover(intent) {
+  return (pos, flags) =>
+    withAgent(async ({ sdk, fileSessionStore, viem, client, owner, agent }) => {
+      needsCoverSdk(sdk);
+      let args;
+      if (intent === "cancel") {
+        if (!/^\d+$/.test(String(pos[1] ?? "")))
+          throw new CliError("cover-cancel LISTING_ID (from cover-positions' listings).");
+        args = { action: "cancel", listingId: BigInt(pos[1]) };
+      } else {
+        const ticker = String(pos[1] ?? "").toUpperCase();
+        if (!/^[A-Z0-9]{2,12}$/.test(ticker))
+          throw new CliError(`cover-${intent === "take" ? "buy" : intent} needs a basket ticker.`);
+        const terms = {
+          ticker,
+          coverUsd: int(pos[2], "USD (whole dollars of cover)"),
+          fromBps: int(flags.from, "--from"),
+          toBps: int(flags.to, "--to"),
+          ...opt("week", flags.week == null ? undefined : int(flags.week, "--week")),
+        };
+        if (intent === "take")
+          args = {
+            action: "take",
+            ...terms,
+            ...opt(
+              "maxPricePer1k",
+              flags["max-price"] == null ? undefined : Number(flags["max-price"]),
+            ),
+            ...opt("allowPartial", flags.partial ? true : undefined),
+          };
+        else {
+          const price = Number(flags.price);
+          if (!(price > 0)) throw new CliError("cover-request needs --price ($ per $1,000).");
+          args = { action: "request", ...terms, pricePer1k: price };
+        }
+      }
+      const build = async () => {
+        const s = await client.agentSession({ owner, key: agent.address });
+        if (!s.active)
+          throw new CliError(
+            `Agent not approved (or expired). Owner approves at ${s.approvalUrl}`,
+            "SESSION_INACTIVE",
+          );
+        if (!s.coverEnabled)
+          throw new CliError(
+            "Weekend Cover isn't turned on for this account. Ask the owner to turn it on in bskts (My cover); never try to enable it yourself.",
+            "SESSION_INACTIVE",
+          );
+        return client.buildAgentCover({ owner, key: agent.address, ...args });
+      };
+
+      // dry run unless --send, as for trades (2026-10-11)
+      if (flags.send && flags.dry) throw new CliError("Use --send or --dry, not both.");
+      if (!flags.send)
+        return out({
+          ok: true,
+          dry: true,
+          sent: false,
+          ...coverView(await build()),
+          next: "Dry run only. To act for real: the same command with --send --id <new id>.",
+        });
+
+      const id = tradeId(flags.id);
+      const store = fileSessionStore(join(TRADES_DIR, `${id}.json`));
+      const existing = await store.loadOutcome();
+      const chain = viem.createPublicClient({ chain: sdk.robinhood, transport: viem.http(RPC) });
+      const result = await sdk.executeCoverOnce({
+        store,
+        sender: {
+          key: agent.address,
+          sign: (data) => agent.signTypedData(data),
+          submit: sdk.coverRelayer(),
+        },
+        // cancels are free; take and request repay gas like a trade
+        maxNetworkFeeUsdg:
+          intent === "cancel"
+            ? 0n
+            : BigInt(Math.round(Number(process.env.BSKTS_MAX_FEE_USDG || 0.25) * 1e6)),
+        reconcile: (plan) => sdk.coverActionState(chain, plan.action),
+        build,
+      });
+      out(outcomeView(id, result, existing !== undefined));
+    });
+}
+
 // ---- main -------------------------------------------------------------------
 
 const COMMANDS = {
@@ -394,6 +553,12 @@ const COMMANDS = {
   buy: trade("buy"),
   sell: trade("sell"),
   "trade-status": tradeStatus,
+  "cover-weeks": coverWeeks,
+  "cover-book": coverBook,
+  "cover-positions": coverPositions,
+  "cover-buy": cover("take"),
+  "cover-request": cover("request"),
+  "cover-cancel": cover("cancel"),
 };
 
 const { pos, flags } = parseArgs(process.argv.slice(2));

@@ -4,6 +4,7 @@ import { BsktsError, type ErrorCode } from "./errors";
 import { execute, type ExecuteResult, type Sender } from "./execute";
 import { checkPolicy, type Policy } from "./policy";
 import * as s from "./schemas";
+import { checkCoverPlan, coverCommits } from "./cover";
 
 export const DEFAULT_API_URL = "https://api.bskts.xyz";
 
@@ -247,6 +248,101 @@ export class BsktsClient {
       const detail = await this.basket(p.ticker);
       checkPolicy(this.policy, { usd: (Number(plan.action.amount) / 1e18) * (detail.nav ?? 0) });
     }
+    return plan;
+  }
+
+  // ---- Weekend Cover (2026-10-11): agents buy it; underwriting is the owner's
+
+  /** The weeks a session may buy cover for (the one trading now and the next
+   * two), the contract's terms, a session's price limits, tickers and presets. */
+  coverWeeks() {
+    return this.#request(s.coverWeeksResponse, "/v1/cover/weeks");
+  }
+  /** Open offers on a basket's cover by range, each range's payout history
+   * (fairPer1k: its average payout a weekend) and, with coverUsd, a quote.
+   * `account` (the buyer's bskts account) leaves its own offers out of quotes. */
+  coverBook(
+    ticker: string,
+    q: {
+      week?: number;
+      coverUsd?: number;
+      fromBps?: number;
+      toBps?: number;
+      account?: Address;
+    } = {},
+  ) {
+    return this.#request(
+      s.coverBookResponse,
+      `/v1/cover/book/${encodeURIComponent(ticker)}${this.#qs(q)}`,
+    );
+  }
+  /** A bskts account's cover, what each paid out (the keeper pays it), and its
+   * open listings. */
+  coverPositions(account: Address) {
+    return this.#request(s.coverPositionsResponse, `/v1/cover/positions/${account}`);
+  }
+  /** An unsigned cover action for the account's session key: take offers,
+   * request cover, or cancel the account's listing. Checked against the request
+   * and the module's bounds (checkCoverPlan) before it is returned; policy's
+   * maxUsdPerTrade caps what it commits, allowedTickers its basket. */
+  async buildAgentCover(
+    p: { owner: Address; key: Address; feeUsdg?: bigint } & (
+      | {
+          action: "take";
+          ticker: string;
+          fromBps: number;
+          toBps: number;
+          coverUsd: number;
+          week?: number;
+          maxPricePer1k?: number;
+          allowPartial?: boolean;
+        }
+      | {
+          action: "request";
+          ticker: string;
+          fromBps: number;
+          toBps: number;
+          coverUsd: number;
+          pricePer1k: number;
+          week?: number;
+        }
+      | { action: "cancel"; listingId: bigint }
+    ),
+  ) {
+    if (p.action !== "cancel") checkPolicy(this.policy, { ticker: p.ticker });
+    if (p.action === "cancel" && p.feeUsdg)
+      throw new BsktsError("Cancels are free: send them without a fee.", "BAD_REQUEST");
+    const { feeUsdg, ...rest } = p;
+    const plan = await this.#request(s.agentCoverPlan, "/v1/agent/cover", {
+      ...rest,
+      ...(p.action !== "cancel" && feeUsdg !== undefined ? { feeUsdg } : {}),
+    });
+    const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+    const d = checkCoverPlan(plan);
+    const mismatch =
+      !same(plan.status.owner, p.owner) ||
+      !same(plan.action.key, p.key) ||
+      !same(plan.status.key, p.key) ||
+      !same(plan.action.account, plan.status.account) ||
+      plan.intent !== p.action ||
+      plan.action.fee !== (p.action === "cancel" ? 0n : (feeUsdg ?? 0n)) ||
+      (p.action === "cancel"
+        ? d.kind !== "cancel" || d.listingId !== p.listingId
+        : plan.ticker?.toUpperCase() !== p.ticker.toUpperCase() ||
+          plan.fromBps !== p.fromBps ||
+          plan.toBps !== p.toBps ||
+          (p.week !== undefined && plan.week !== p.week) ||
+          (d.kind === "take" &&
+            (p.action !== "take" ||
+              d.minCoverUsd > BigInt(p.coverUsd) ||
+              (p.allowPartial !== true && d.minCoverUsd !== BigInt(p.coverUsd)))) ||
+          (d.kind === "request" &&
+            (p.action !== "request" ||
+              d.coverUsd !== BigInt(p.coverUsd) ||
+              d.pricePer1k !== BigInt(Math.round(p.pricePer1k * 100)) * 10_000n)));
+    if (mismatch)
+      throw new BsktsError("Cover plan does not match the requested action.", "BAD_RESPONSE");
+    checkPolicy(this.policy, { usd: Number(coverCommits(plan)) / 1e6 });
     return plan;
   }
 

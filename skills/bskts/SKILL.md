@@ -1,6 +1,6 @@
 ---
 name: bskts
-description: Trade bskts tokenized index baskets (stock tokens and crypto on Robinhood Chain) from the owner's bskts account with this agent's own limited key. Use when the user wants to set up bskts trading, check basket markets or positions, or buy or sell a basket.
+description: Trade bskts tokenized index baskets (stock tokens and crypto on Robinhood Chain) from the owner's bskts account with this agent's own limited key. Use when the user wants to set up bskts trading, check basket markets or positions, buy or sell a basket, or buy Weekend Cover (protection against a weekend drop) on a basket the account holds.
 homepage: https://bskts.xyz/docs#agents
 metadata: {"openclaw":{"emoji":"🧺","requires":{"bins":["node","npm"]},"homepage":"https://bskts.xyz/docs#agents"}}
 ---
@@ -84,6 +84,45 @@ Each `--id` is one trade, journalled under `~/.bskts-agent/trades/`.
 - Optional extra limits on this host: `BSKTS_MAX_USD_PER_TRADE` and `BSKTS_ALLOWED_TICKERS`
   (comma-separated).
 
+## Weekend Cover (protection for a held basket)
+
+Stock tokens trade 24/7 but their stocks don't: news over a weekend lands as a gap when markets
+open on Monday. Weekend Cover pays the account if a basket it **holds** drops over the weekend,
+in proportion to the drop between two levels. Range `--from 300 --to 1000` pays nothing above
+-3%, then 1% of the cover per extra 1% of drop, and the full 7% of the cover at -10% or worse.
+You can only **buy** cover. Never offer or underwrite it.
+
+**When it makes sense.** Suggest it, don't push it, and only when all of these hold:
+
+- The account holds the basket (`positions`) and the owner cares about a weekend drop, for
+  example ahead of earnings, a known event, or a basket with a `risk` note.
+- The price is reasonable. `cover-book TICKER --cover USD` shows each range's offers and
+  `history`: `fairPer1k` is what the range paid out on an average weekend on record, and
+  `paidWeekends` / `weekends` how often it paid at all. An offer far above `fairPer1k` is
+  expensive insurance. Say so, with the numbers.
+- The cover is no more than the holding's value. The contract refuses more (`NOT_A_HOLDER`).
+- It fits: premium plus the 1% fee is at most 3% of the cover, and it counts against the same
+  daily limit as trades, kept separately.
+
+**Steps.** Cover must be turned on by the owner first (`status` → `coverEnabled`); if it is
+off, ask them, never try to turn it on.
+
+1. `cover-weeks`: the weeks open to buy (this weekend and the next two) and preset ranges.
+2. `cover-book TICKER --cover USD`, or with `--from BPS --to BPS` for one range: offers, history
+   and a `quote` with the total `cost`.
+3. Explain the cost, the range in plain words and how often it paid, then confirm with the owner
+   as for a trade.
+4. `cover-buy TICKER USD --from BPS --to BPS` is a dry run. After the owner's OK, the same
+   command plus `--send` and a new `--id`. It takes the cheapest offers for all of the cover or nothing; `--partial` takes
+   what is offered, `--max-price P` caps the price per $1,000.
+5. `cover-positions` shows the cover, the weekend's `move`, and `paidOut`. Payouts are
+   automatic; nothing to claim.
+
+`cover-request` (asks underwriters for cover at your price, locking the premium until filled)
+and `cover-cancel LISTING_ID` (withdraws the unfilled part, free) follow the same rules: dry run unless `--send --id`.
+Only request with the owner's explicit OK. Cover `--id`s share the trade journal, so
+`trade-status --id ID` works for them too.
+
 ## When something fails
 
 | `code`                                     | What to do                                                                                                           |
@@ -96,6 +135,9 @@ Each `--id` is one trade, journalled under `~/.bskts-agent/trades/`.
 | `INSUFFICIENT_SHARES`                      | Check `positions`.                                                                                                   |
 | `UNCERTAIN`                                | Outcome unknown. Rerun the same command with the same `--id` in a minute.                                            |
 | `NO_ROUTE`, `PAUSED`, `UPSTREAM`           | Not tradable right now. Try later.                                                                                   |
+| `NOT_A_HOLDER` | Cover is for holders: cover no more than the account holds of that basket. |
+| `NO_COVER` | No offer on that range at your price. Read `cover-book`, try another range, or ask the owner about a request. |
+| `COVER_CLOSED` | That weekend has closed to trading, or it is more than two weeks ahead. Check `cover-weeks`. |
 
 ## More
 

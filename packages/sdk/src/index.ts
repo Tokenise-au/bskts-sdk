@@ -32,3 +32,18 @@ export {
 export type { AgentTypedData, FeeMemory, SessionSender } from "./agent";
 export { executeSessionOnce, sessionActionState } from "./session-once";
 export type { SessionStore, SessionPending, SessionOutcome } from "./session-once";
+export {
+  COVER_ACTION_TYPES,
+  checkCoverPlan,
+  coverActionState,
+  coverCommits,
+  coverFeeKey,
+  coverRelayer,
+  coverTypedData,
+  decodeCoverAction,
+  executeCover,
+  executeCoverOnce,
+} from "./cover";
+export type { CoverPending, CoverSender, CoverStore, CoverTypedData } from "./cover";
+export type { JournalStore } from "./session-once";
+export type { RelayerOptions } from "./agent";

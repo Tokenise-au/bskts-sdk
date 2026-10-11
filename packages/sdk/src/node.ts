@@ -2,7 +2,7 @@
 // This adapter writes only public plans and outcomes, never signing material.
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { SessionStore } from "./session-once";
+import type { JournalStore, SessionPending } from "./session-once";
 
 const code = (e: unknown) => (e as NodeJS.ErrnoException).code;
 function read(path: string): unknown | undefined {
@@ -51,10 +51,11 @@ function create(path: string, record: unknown): boolean {
   }
   return true;
 }
-/** Retain both files, even after success. Exclusive creation arbitrates
+/** Retain both files, even after success. Holds a trade's journal by default,
+ * or a cover action's (fileSessionStore<CoverPending>, 2026-10-11). Exclusive creation arbitrates
  * concurrent starts without a stale PID lock after an abrupt process exit.
  * A partial/corrupt journal fails closed and is never overwritten. */
-export function fileSessionStore(path: string): SessionStore {
+export function fileSessionStore<R = SessionPending>(path: string): JournalStore<R> {
   const record = resolve(path);
   const result = `${record}.result`;
   return {
