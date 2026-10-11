@@ -70,7 +70,9 @@ async function main() {
   if (opts.start && opts.install && installed && interactive) {
     console.log(`
 Starting your agent (the first start can take a minute). It prints a link to
-approve it in bskts, waits while you do, then buys $6 of INDEX2 once. Ctrl+C stops it; later, run "${start}" in ${opts.dir}.
+approve it in bskts, waits while you do, then DRY RUNS a $6 buy of INDEX2:
+nothing is sent. Ctrl+C stops it; later, run "${start}" in ${opts.dir}, and
+"${pm} run live" to send the buy for real.
 `);
     process.exitCode = run(pm, "start", dir).status ?? 1;
     return;
@@ -81,7 +83,8 @@ Next:
   ${start}
 
 It prints the agent's address and a link to approve it in bskts, waits while
-you approve, then buys $6 of INDEX2 once. Guide: https://bskts.xyz/docs#agents
+you approve, then dry runs a $6 buy of INDEX2: nothing is sent until you run
+"${pm} run live". Guide: https://bskts.xyz/docs#agents
 `);
 }
 

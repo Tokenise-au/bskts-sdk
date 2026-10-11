@@ -99,13 +99,16 @@ describe("files", () => {
     expect(files[".env"]).toContain(`BSKTS_OWNER=${owner}\n`);
     expect(files[".gitignore"]).toContain(".env");
   });
-  it("starts with npm start, on the published SDK", () => {
+  it("dry runs with npm start and sends only with npm run live", () => {
     const pkg = JSON.parse(files["package.json"]);
     expect(pkg).toMatchObject({
       name: "my-agent",
       private: true,
       type: "module",
-      scripts: { start: "node --env-file=.env agent.mjs" },
+      scripts: {
+        start: "node --env-file=.env agent.mjs",
+        live: "node --env-file=.env agent.mjs --live",
+      },
     });
     expect(pkg.dependencies["@bskts/sdk"]).toBe("^0.5.0");
     expect(pkg.engines.node).toBe(">=20.19");
