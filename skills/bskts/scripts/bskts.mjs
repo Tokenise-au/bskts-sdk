@@ -212,7 +212,9 @@ AGENT_KEY=${key}
       ok: true,
       agent,
       owner,
-      approvalUrl: `https://bskts.xyz/portfolio?tab=agents&key=${agent}`,
+      // agent=, not key=: OpenClaw masks what follows key= in its output, and
+      // the owner got "&key=***" (2026-10-11); the app reads both
+      approvalUrl: `https://bskts.xyz/portfolio?tab=agents&agent=${agent}`,
       warning: `Could not read the live permission (${e?.code ?? "ERROR"}: ${String(e?.message ?? e).slice(0, 200)}). Run status later.`,
       next: "Send the owner approvalUrl. They check the limits and sign once with their wallet; then run status.",
     });
