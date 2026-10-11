@@ -1,5 +1,13 @@
 # @bskts/create-agent
 
+## 0.3.0
+
+### Minor Changes
+
+- 7a67744: The starter dry runs by default. `npm start` waits for approval, then builds and simulates the $6
+  INDEX2 buy and sends nothing; `npm run live` sends it, once. Approving an agent is no longer a
+  trade.
+
 ## 0.2.1
 
 ### Patch Changes
