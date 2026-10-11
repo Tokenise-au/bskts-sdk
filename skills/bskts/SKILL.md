@@ -25,7 +25,10 @@ run installs its two npm packages into `{baseDir}` and needs Node 20.19 or later
 2. Run `setup --owner 0x…`. It creates your key on this machine and prints your `agent` address
    and an `approvalUrl`.
 3. Send the owner the `approvalUrl`. It opens bskts → Portfolio → Agents with your address filled
-   in. They check the limits and sign once. Defaults: $100/day, 0.5% slippage, 7 days.
+   in. They choose the limits and sign once. The form suggests a daily limit of 10% of the
+   account's USDG (at least $10, at most $100), 0.5% slippage and 7 days; they can change these.
+   Don't quote limits before approval: read them from `status` afterwards. The daily limit
+   counts buys AND sells, so suggest one that leaves room to sell what you buy.
 4. Run `status` until `active` is `true`, then tell them what you can spend
    (`remainingTodayUsdg`, `accountUsdg`, `validUntil`).
 
@@ -35,7 +38,8 @@ and never run `setup` for a different owner on top of it.
 ## Read
 
 - `markets`: each basket's `nav`, `change24h` (a fraction: 0.012 = +1.2%) and `buyCostBps`
-  (the real cost of a buy in basis points, on top of the 0.20% mint fee).
+  (the full cost of a buy in basis points: pool fees plus price impact, on top of the 0.20% mint
+  fee). Call it "buy cost", not "spread": there is no order book.
 - `basket TICKER`: thesis, constituents, weights and a `risk` note for the riskier baskets.
 - `positions`: the account's holdings, value and PnL.
 - `status`: whether you are approved, and what is left today.
