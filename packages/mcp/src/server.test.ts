@@ -38,7 +38,7 @@ const text = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).c
 const PLAN = { approval: null, tx: { to: ADDR, data: "0x", value: "0" } };
 
 describe("bskts MCP server", () => {
-  it("lists nine tools, with annotations, inside a token budget", async () => {
+  it("lists eleven tools, with annotations, inside a token budget", async () => {
     const mcp = await connect(api({}).client);
     const { tools } = await mcp.listTools();
     expect(tools.map((t) => t.name)).toEqual([
@@ -50,11 +50,15 @@ describe("bskts MCP server", () => {
       "bskts_order",
       "bskts_agent_session",
       "bskts_agent_trade",
+      "bskts_cover",
+      "bskts_agent_cover",
       "bskts_guide",
     ]);
     expect(tools.every((t) => t.annotations?.readOnlyHint)).toBe(true);
     // loaded into every conversation that has the server
-    expect(JSON.stringify(tools).length).toBeLessThan(9_000);
+    // 2026-10-11: 9,000 -> 12,000 for the two Weekend Cover tools (~2.5k with
+    // their input schemas, trimmed to the rules a buyer needs)
+    expect(JSON.stringify(tools).length).toBeLessThan(12_000);
     expect(mcp.getInstructions()).toMatch(/UNSIGNED/);
   });
 
@@ -178,7 +182,7 @@ describe("bskts MCP server", () => {
     expect(serverInfo.version).toBe(pkg.version);
     expect(VERSION).toBe(pkg.version);
     const list = await post({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-    expect((await list.json()).result.tools).toHaveLength(9);
+    expect((await list.json()).result.tools).toHaveLength(11);
   });
 });
 

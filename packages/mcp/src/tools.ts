@@ -4,12 +4,12 @@
 // Unsigned only: build tools return the transactions for the user's own wallet
 // to sign; nothing here holds a key or sends anything.
 //
-// Token budget: nine tools. The rules an agent must follow (units, approval
+// Token budget: eleven tools (2026-10-11: + bskts_cover, bskts_agent_cover). The rules an agent must follow (units, approval
 // order, never send a failed dry run) live in the descriptions, so they arrive
 // with the tools instead of costing a docs read.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { type BsktsClient, BsktsError, agentTypedData } from "@bskts/sdk";
+import { type BsktsClient, BsktsError, agentTypedData, coverTypedData } from "@bskts/sdk";
 import type { Address } from "viem";
 import { z } from "zod";
 
@@ -62,7 +62,7 @@ const READ = { readOnlyHint: true, openWorldHint: true } as const;
 const BUILD = { readOnlyHint: true, openWorldHint: true, idempotentHint: false } as const;
 
 export const INSTRUCTIONS =
-  "bskts: tokenized baskets on Robinhood Chain (4663). UNSIGNED tools; no keys, signing or sending here. Two paths: (1) wallet tools return approval then tx; owner pays ETH gas. (2) autonomous agents: bskts_agent_session resolves the owner account and checks public agent key authority; owner approves it once in Portfolio (10% available USDG, at least $10, capped $100/day, 0.5% slippage, 7 days, fixed dollars). bskts_agent_trade returns Action typedData for the host session signer and gasless USDG-fee relayer. No owner popup per delegated trade. Owner signature required to change/renew limits. Keys also authorise Cover when enabled; Cover spending counts separately, underwriting needs owner allowance. Revoking blocks new requests; existing orders/schedules require separate cancellation. Never request a private key or reuse a revoked key. Check basket risk and buyCostBps; never send failed simulations. Preserve nonce on bounded 402 fee retries; do not retry uncertain submissions with a new nonce.";
+  "bskts: tokenized baskets on Robinhood Chain (4663). UNSIGNED tools; no keys, signing or sending here. Two paths: (1) wallet tools return approval then tx; owner pays ETH gas. (2) autonomous agents: bskts_agent_session resolves the owner account and checks public agent key authority; owner approves it once in Portfolio (10% available USDG, at least $10, capped $100/day, 0.5% slippage, 7 days, fixed dollars). bskts_agent_trade returns Action typedData for the host session signer and gasless USDG-fee relayer. No owner popup per delegated trade. Owner signature required to change/renew limits. Agents may BUY Weekend Cover on held baskets (bskts_cover to read, bskts_agent_cover to build) once the owner enabled Cover; spending counts separately, at most 3% of the cover; never underwrite. Revoking blocks new requests; existing orders/schedules require separate cancellation. Never request a private key or reuse a revoked key. Check basket risk and buyCostBps; never send failed simulations. Preserve nonce on bounded 402 fee retries; do not retry uncertain submissions with a new nonce.";
 
 export function registerBsktsTools(server: McpServer, client: BsktsClient) {
   server.registerTool(
@@ -294,6 +294,111 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
             : { ...base, side: "sell", shares: BigInt(p.shares!) },
         );
         return { ...plan, typedData: agentTypedData(plan.action) };
+      }),
+  );
+
+  // 2026-10-11: Weekend Cover, buying only. One read tool with three views
+  // keeps the tool list (and every cold start's tokens) short.
+  const bps = z.number().int().min(1).max(3000);
+  server.registerTool(
+    "bskts_cover",
+    {
+      title: "Weekend Cover",
+      description:
+        "Weekend Cover pays a held basket's weekend drop between fromBps and toBps (300-1000: from -3%, full at -10%). Prices: $ per $1,000 of cover, +1% fee. weeks: buyable weeks, terms, limits. book (ticker): offers by range, history.fairPer1k (average payout), quote for coverUsd. positions (bskts account): cover, payouts, listings.",
+      inputSchema: {
+        view: z.enum(["weeks", "book", "positions"]),
+        ticker: ticker.optional(),
+        account: address.optional(),
+        coverUsd: z.number().int().min(1).optional(),
+        fromBps: bps.optional(),
+        toBps: bps.optional(),
+        week: z.number().int().min(0).optional(),
+      },
+      annotations: READ,
+    },
+    (p) =>
+      run(() => {
+        if (p.view === "weeks") return client.coverWeeks();
+        if (p.view === "positions") {
+          if (!p.account) throw new BsktsError("positions needs account.", "BAD_REQUEST");
+          return client.coverPositions(p.account);
+        }
+        if (!p.ticker) throw new BsktsError("book needs ticker.", "BAD_REQUEST");
+        const { view: _v, ticker: t, ...q } = p;
+        return client.coverBook(t, q);
+      }),
+  );
+  server.registerTool(
+    "bskts_agent_cover",
+    {
+      title: "Build a delegated cover purchase",
+      description:
+        "UNSIGNED Weekend Cover action for the agent session key: take offers (all of coverUsd unless allowPartial), request at pricePer1k, or cancel listingId (free). Never underwrites. Needs owner-enabled Cover and basket holdings; premium + fee <= 3% of cover. Sign typedData, POST {action,signature} to relayerUrl; 402: re-sign the fee only, within the host cap.",
+      inputSchema: {
+        owner: address,
+        key: address,
+        action: z.enum(["take", "request", "cancel"]),
+        ticker: ticker.optional(),
+        fromBps: bps.optional(),
+        toBps: bps.optional(),
+        coverUsd: z.number().int().min(1).optional(),
+        week: z.number().int().min(0).optional(),
+        maxPricePer1k: z.number().positive().optional(),
+        allowPartial: z.boolean().optional(),
+        pricePer1k: z.number().positive().optional(),
+        listingId: z.string().regex(/^\d+$/).optional(),
+        feeUsdg: z.string().regex(/^\d+$/).optional(),
+      },
+      annotations: BUILD,
+    },
+    (p) =>
+      run(async () => {
+        const who = { owner: p.owner, key: p.key };
+        const fee = p.feeUsdg == null ? {} : { feeUsdg: BigInt(p.feeUsdg) };
+        const opt = <K extends string, V>(k: K, v: V | undefined) =>
+          (v === undefined ? {} : { [k]: v }) as Partial<Record<K, V>>;
+        let plan;
+        if (p.action === "cancel") {
+          if (!p.listingId) throw new BsktsError("cancel needs listingId.", "BAD_REQUEST");
+          plan = await client.buildAgentCover({
+            ...who,
+            action: "cancel",
+            listingId: BigInt(p.listingId),
+          });
+        } else {
+          if (!p.ticker || p.fromBps == null || p.toBps == null || p.coverUsd == null)
+            throw new BsktsError(
+              `${p.action} needs ticker, fromBps, toBps and coverUsd.`,
+              "BAD_REQUEST",
+            );
+          const terms = {
+            ...who,
+            ...fee,
+            ticker: p.ticker,
+            fromBps: p.fromBps,
+            toBps: p.toBps,
+            coverUsd: p.coverUsd,
+            ...opt("week", p.week),
+          };
+          if (p.action === "take")
+            plan = await client.buildAgentCover({
+              ...terms,
+              action: "take",
+              ...opt("maxPricePer1k", p.maxPricePer1k),
+              ...opt("allowPartial", p.allowPartial),
+            });
+          else {
+            if (p.pricePer1k == null)
+              throw new BsktsError("request needs pricePer1k.", "BAD_REQUEST");
+            plan = await client.buildAgentCover({
+              ...terms,
+              action: "request",
+              pricePer1k: p.pricePer1k,
+            });
+          }
+        }
+        return { ...plan, typedData: coverTypedData(plan.action) };
       }),
   );
 

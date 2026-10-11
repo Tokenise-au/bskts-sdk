@@ -351,6 +351,176 @@ export const sessionReceipt = z.object({
   // success too; executeSession signs the next one with it (one signature).
   requiredFee: wei.optional(),
 });
+// ---- Weekend Cover (2026-10-11) -------------------------------------------
+// Agents BUY cover on baskets their account holds: take offers, request cover,
+// cancel their own listing. Signed under BsktsCoverModule's own EIP-712 domain
+// ("bskts cover"), never the trading module's, and sent to the relayer's cover
+// route. Underwriting (offer, fill) is not an agent action: it needs the
+// owner's own allowance on the module.
+export const COVER_MODULE = "0x8fb33053ee68dD723F6F2F741523Bc76fE1FD2C3" as const;
+export const COVER_RELAYER_URL = "https://bskts.xyz/relay/v1/account/cover" as const;
+/** BsktsCoverModule.Kind: take 0, request 1, cancel 4 (offer 2, fill 3 and
+ * stop-repeat 5 are not agent actions and never parse). */
+export const COVER_KINDS = { take: 0, request: 1, cancel: 4 } as const;
+
+const coverWeek = z.object({
+  id: num,
+  /** unix seconds */
+  close: num,
+  settle: num,
+  cutoffAt: num,
+  tradingOpen: z.boolean(),
+});
+const coverTerms = z.object({
+  feeBps: num,
+  minCoverUsd: num,
+  rangeStepBps: num,
+  minFromBps: num,
+  minWidthBps: num,
+  maxToBps: num,
+});
+/** A session's limits on buying, dollars per $1,000 of cover. */
+const coverSessionLimits = z.object({
+  maxTakePer1k: num,
+  maxRequestPer1k: num,
+  weeksAhead: num,
+  maxPremiumOfCover: num,
+});
+export const coverWeeksResponse = z.object({
+  /** the week trading now; null when none is published ahead */
+  current: numOrNull,
+  now: num,
+  paused: z.boolean(),
+  weeks: z.array(coverWeek),
+  terms: coverTerms,
+  session: coverSessionLimits,
+  tickers: z.array(z.string()),
+  presets: z.array(z.object({ fromBps: num, toBps: num })),
+});
+export const coverQuote = z.object({
+  coverUsd: num,
+  filledUsd: num,
+  restUsd: num,
+  /** dollars */
+  premium: num,
+  fee: num,
+  cost: num,
+  costUsdg: wei,
+  per1k: numOrNull,
+});
+export const coverRange = z.object({
+  fromBps: num,
+  toBps: num,
+  offers: z.array(
+    z.object({
+      id: z.string(),
+      /** dollars per $1,000 of cover */
+      pricePer1k: num,
+      coverUsd: num,
+      sessionCanTake: z.boolean(),
+      mine: z.boolean().optional(),
+    }),
+  ),
+  depthUsd: num,
+  cheapestPer1k: numOrNull,
+  /** the range over every weekend on record: fairPer1k is its average payout */
+  history: z.object({
+    weekends: num,
+    since: z.string(),
+    paidWeekends: num,
+    fullWeekends: num,
+    fairPer1k: num,
+    estimatePer1k: num,
+  }),
+  quote: coverQuote.optional(),
+});
+export const coverBookResponse = z.object({
+  ticker: z.string(),
+  vault: address,
+  week: coverWeek,
+  terms: coverTerms,
+  session: coverSessionLimits,
+  ranges: z.array(coverRange),
+  note: z.string().optional(),
+});
+export const coverPositionsResponse = z.object({
+  account: address,
+  positions: z.array(
+    z.object({
+      ticker: z.string(),
+      week: num,
+      role: z.enum(["buyer", "underwriter"]),
+      fromBps: num,
+      toBps: num,
+      coverUsd: num,
+      premium: num,
+      fees: num,
+      /** the weekend's recorded move (-0.03 = -3%), "void" (refunded), or null before it settles */
+      move: z.union([num, z.literal("void"), z.null()]),
+      paid: z.boolean(),
+      paidOut: num,
+    }),
+  ),
+  listings: z.array(
+    z.object({
+      id: z.string(),
+      week: num,
+      ticker: z.string(),
+      side: z.enum(["request", "offer"]),
+      fromBps: num,
+      toBps: num,
+      pricePer1k: num,
+      openUsd: num,
+      listedUsd: num,
+    }),
+  ),
+  note: z.string().optional(),
+});
+export const coverAction = z.object({
+  account: address,
+  key: address,
+  kind: z.union([z.literal(0), z.literal(1), z.literal(4)]),
+  data: hex.refine((h) => h.length % 2 === 0 && h.length > 2),
+  nonce: uint256,
+  deadline: z
+    .number()
+    .int()
+    .positive()
+    .max(2 ** 48 - 1),
+  fee: uint256.refine((n) => n <= 10_000_000n),
+});
+export const agentCoverPlan = z
+  .object({
+    intent: z.enum(["take", "request", "cancel"]),
+    ticker: z.string().optional(),
+    week: num.optional(),
+    fromBps: num.optional(),
+    toBps: num.optional(),
+    /** what it buys or returns, in dollars (premium, fee, cost; cover locked) */
+    summary: z.record(z.string(), z.unknown()),
+    status: agentSession,
+    /** BsktsCoverModule.remainingToday: the session's cover room, apart from trades */
+    coverRemainingTodayUsdg: uint256,
+    module: z.literal(COVER_MODULE),
+    action: coverAction,
+    relayerUrl: z.literal(COVER_RELAYER_URL),
+    simulation,
+  })
+  .refine((p) => p.action.kind === COVER_KINDS[p.intent], {
+    message: "Cover action kind does not match its intent.",
+    path: ["action", "kind"],
+  })
+  // a cancel never pays a fee (the relayer refuses one); the rest name a basket
+  .refine((p) => (p.intent === "cancel" ? p.action.fee === 0n : !!p.ticker), {
+    message: "Cover plan is missing its basket, or a cancel carries a fee.",
+    path: ["intent"],
+  });
+export type CoverWeeksResponse = z.infer<typeof coverWeeksResponse>;
+export type CoverBookResponse = z.infer<typeof coverBookResponse>;
+export type CoverPositionsResponse = z.infer<typeof coverPositionsResponse>;
+export type CoverAction = z.infer<typeof coverAction>;
+export type AgentCoverPlan = z.infer<typeof agentCoverPlan>;
+
 export type AgentSession = z.infer<typeof agentSession>;
 export type SessionAction = z.infer<typeof sessionAction>;
 export type AgentTradePlan = z.infer<typeof agentTradePlan>;

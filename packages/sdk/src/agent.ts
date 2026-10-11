@@ -46,12 +46,23 @@ export interface SessionSender {
   sign(typedData: AgentTypedData): Promise<Hex>;
   submit(body: { action: SessionAction; signature: Hex }): Promise<SessionReceipt>;
 }
+export interface RelayerOptions {
+  url?: string;
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+}
 /** POST already-signed Actions; this adapter never receives signing material.
  * A timeout is an uncertain submission: it is never retried automatically. */
-export function sessionRelayer(
-  options: { url?: string; fetch?: typeof fetch; timeoutMs?: number } = {},
-): SessionSender["submit"] {
-  const url = options.url ?? "https://bskts.xyz/relay/v1/account/execute";
+export function sessionRelayer(options: RelayerOptions = {}): SessionSender["submit"] {
+  return signedPoster(options, "https://bskts.xyz/relay/v1/account/execute");
+}
+/** The poster behind sessionRelayer and coverRelayer (2026-10-11: cover actions
+ * go to the relayer's cover route, with the same refusals and receipts). */
+export function signedPoster(
+  options: RelayerOptions,
+  defaultUrl: string,
+): (body: { action: unknown; signature: Hex }) => Promise<SessionReceipt> {
+  const url = options.url ?? defaultUrl;
   const endpoint = new URL(url);
   if (
     endpoint.protocol !== "https:" &&
