@@ -29176,7 +29176,9 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const USAGE = `bskts skill CLI. Commands (all print JSON):
+const SKILL_VERSION = "1.0.0";
+const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
+  version                    this skill's version
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
   status                     live permission: active, limits, remaining today, account USDG
   markets                    every basket: NAV, 24h change, buy cost
@@ -29262,6 +29264,7 @@ async function load() {
 }
 function sessionView(s) {
 	return {
+		skillVersion: SKILL_VERSION,
 		active: s.active,
 		paused: s.paused,
 		owner: s.owner,
@@ -29657,6 +29660,10 @@ function cover(intent) {
 	});
 }
 const COMMANDS = {
+	version: async () => out({
+		ok: true,
+		skillVersion: SKILL_VERSION
+	}),
 	setup: (_, f) => setup(f),
 	status,
 	markets,
