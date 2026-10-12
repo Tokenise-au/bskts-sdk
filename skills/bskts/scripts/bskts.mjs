@@ -157,16 +157,33 @@ function sessionView(s) {
   };
 }
 
+// 2026-10-12: an agent's plan is unsigned, so the API can't simulate it
+// (simulation.ok null, "skipped"); the relayer simulates the SIGNED action
+// just before broadcasting and refuses one that would fail. SKILL.md said
+// "send only if simulation.ok is true", which a dry run can never meet: a
+// fresh Claude Code agent stopped on it, and Fen reported the skipped
+// simulation as "OK". Say plainly what a dry run did and didn't check.
+function simulationView(sim) {
+  if (sim?.ok === true) return { simulated: true, simulation: sim };
+  if (sim?.ok === false) return { simulated: true, wouldFail: true, simulation: sim };
+  return {
+    simulated: false,
+    simulation: sim,
+    simulationNote:
+      "Not simulated: an unsigned agent trade can't be. This dry run checked approval, limits, size, route and price. With --send the relayer simulates the signed trade before broadcasting and refuses it, spending nothing, if it would fail. Report this as 'not simulated', never as passed.",
+  };
+}
+
 function planView(plan, side) {
   const a = plan.action;
   return {
     ticker: plan.ticker,
     side,
     ...(side === "buy"
-      ? { sharesWei: a.amount, maxUsdgIn: usd6(a.limit) }
-      : { sharesWei: a.amount, minUsdgOut: usd6(a.limit) }),
+      ? { shares: Number(a.amount) / 1e18, sharesWei: a.amount, maxUsdgIn: usd6(a.limit) }
+      : { shares: Number(a.amount) / 1e18, sharesWei: a.amount, minUsdgOut: usd6(a.limit) }),
     slippageBps: a.slippageBps,
-    simulation: plan.simulation,
+    ...simulationView(plan.simulation),
     remainingTodayUsdg: usd6(plan.status.remainingTodayUsdg),
   };
 }
@@ -455,7 +472,7 @@ function coverView(plan) {
     ...opt("toBps", plan.toBps),
     ...plan.summary,
     coverRemainingTodayUsdg: usd6(plan.coverRemainingTodayUsdg),
-    simulation: plan.simulation,
+    ...simulationView(plan.simulation),
   };
 }
 
