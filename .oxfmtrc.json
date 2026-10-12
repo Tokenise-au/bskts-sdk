@@ -12,6 +12,6 @@
     ".changeset/*.md",
     "CHANGELOG.md",
     "skills/*/SKILL.md",
-    "skills/*/package-lock.json"
+    "skills/*/scripts/bskts.mjs"
   ]
 }

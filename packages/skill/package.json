@@ -1,0 +1,14 @@
+{
+  "name": "@bskts/skill-build",
+  "private": true,
+  "type": "module",
+  "description": "Builds the bskts agent skill's self-contained script (skills/bskts/scripts/bskts.mjs) from src/bskts.mjs.",
+  "scripts": {
+    "build": "tsdown",
+    "check:skill": "git diff --exit-code -- ../../skills/bskts/scripts/bskts.mjs"
+  },
+  "dependencies": {
+    "@bskts/sdk": "workspace:*",
+    "viem": "^2.57.0"
+  }
+}
