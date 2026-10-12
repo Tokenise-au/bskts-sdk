@@ -67,6 +67,15 @@ importers:
         specifier: ^2.57.0
         version: 2.57.0(typescript@5.8.3)(zod@4.6.5)
 
+  packages/skill:
+    dependencies:
+      '@bskts/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      viem:
+        specifier: ^2.57.0
+        version: 2.57.0(typescript@5.8.3)(zod@4.6.5)
+
 packages:
 
   '@adraffy/ens-normalize@1.11.1':

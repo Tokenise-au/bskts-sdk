@@ -40,6 +40,9 @@ jobs:
       # build before typecheck: @bskts/mcp type-checks against @bskts/sdk's built types
       - name: Build
         run: pnpm run build
+      # 2026-10-12: the skill ships a generated bundle; it must match a fresh build of packages/skill
+      - name: Skill bundle up to date
+        run: pnpm run check:skill
       - name: Typecheck
         run: pnpm run typecheck
       - name: Tests
