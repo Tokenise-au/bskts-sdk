@@ -16,7 +16,9 @@ are how agents and developers trade it.
 - **Edit `skills/bskts/scripts/bskts.mjs`.** It is generated (2026-10-12): edit
   `packages/skill/src/bskts.mjs` and run `pnpm run build`; CI's `check:skill` fails on a stale
   bundle. The skill installs nothing at runtime; keep it that way (no child processes, no
-  downloads).
+  downloads). Every merge to `main` that touches `skills/` reaches users on their next
+  `npx skills update`, so treat it as a release: bump `version:` in `SKILL.md` and
+  `SKILL_VERSION` in the source together (a test keeps them equal), then tag `skill-v<version>`.
 - **Resolve a token by symbol.** Addresses come from the API only; the chain has impostor tokens.
 - **Use a price feed or third-party price API.** Prices come from the bskts API (on-chain pools).
 - **Hand-edit `CHANGELOG.md` or package versions.** Changesets owns them.

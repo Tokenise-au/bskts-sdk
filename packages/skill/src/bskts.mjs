@@ -31,8 +31,14 @@ const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 // The same RPC the create-agent starter reconciles against.
 const RPC = "https://bskts.xyz/rpc";
+// 2026-10-12: the skill's version, also in SKILL.md's frontmatter (a test
+// keeps them equal). skills.sh tracks installs by content hash only, so this
+// is how a person or agent tells which build is running when debugging.
+// Bump it with any change under skills/ and tag main skill-v<version>.
+const SKILL_VERSION = "1.0.0";
 
-const USAGE = `bskts skill CLI. Commands (all print JSON):
+const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
+  version                    this skill's version
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
   status                     live permission: active, limits, remaining today, account USDG
   markets                    every basket: NAV, 24h change, buy cost
@@ -133,6 +139,7 @@ async function load() {
 
 function sessionView(s) {
   return {
+    skillVersion: SKILL_VERSION,
     active: s.active,
     paused: s.paused,
     owner: s.owner,
@@ -555,6 +562,7 @@ function cover(intent) {
 // ---- main -------------------------------------------------------------------
 
 const COMMANDS = {
+  version: async () => out({ ok: true, skillVersion: SKILL_VERSION }),
   setup: (_, f) => setup(f),
   status,
   markets,
