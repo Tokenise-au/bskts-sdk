@@ -3,11 +3,11 @@ import { z } from "zod";
 import { executeSession, type SessionSender } from "./agent";
 import { BsktsError } from "./errors";
 import {
-  agentTradePlan,
+  agentExecutionPlan,
   sessionReceipt,
   SESSION_MODULE,
   wei,
-  type AgentTradePlan,
+  type AgentExecutionPlan,
   type SessionAction,
 } from "./schemas";
 
@@ -19,7 +19,7 @@ export const journalOf = <P extends z.ZodType>(plan: P) =>
     plan,
     maxNetworkFeeUsdg: wei.refine((n) => n <= 10_000_000n),
   });
-const pending = journalOf(agentTradePlan);
+const pending = journalOf(agentExecutionPlan);
 const outcome = z.discriminatedUnion("state", [
   z.object({ state: z.literal("confirmed"), receipt: sessionReceipt }),
   z.object({ state: z.literal("consumed") }),
@@ -155,10 +155,10 @@ export async function runOnce<
  * only for a deliberate new trade after resolving the previous operation. */
 export function executeSessionOnce(options: {
   store: SessionStore;
-  build(): Promise<AgentTradePlan>;
+  build(): Promise<AgentExecutionPlan>;
   sender: SessionSender;
   maxNetworkFeeUsdg: bigint;
-  reconcile(plan: AgentTradePlan): Promise<"pending" | "consumed" | "expired">;
+  reconcile(plan: AgentExecutionPlan): Promise<"pending" | "consumed" | "expired">;
 }): Promise<SessionOutcome> {
   return runOnce({
     store: options.store,

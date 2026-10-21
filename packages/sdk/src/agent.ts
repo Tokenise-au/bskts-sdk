@@ -1,16 +1,18 @@
 import { recoverTypedDataAddress, type Address, type Hex } from "viem";
 import { BsktsError, type ErrorCode } from "./errors";
+import { decodeAgentOrder } from "./agent-orders";
+import { agentExecutionPlan } from "./schemas";
 import { isAgentVault } from "./agent-vaults";
 import {
   SESSION_MODULE,
   sessionReceipt,
-  type AgentTradePlan,
+  type AgentExecutionPlan,
   type SessionAction,
   type SessionReceipt,
 } from "./schemas";
 
 // 2026-10-02: reconstruct this locally rather than trusting server-supplied
-// types/domain. Only buy/sell Actions can reach the host's delegated signer.
+// types/domain. Market and reviewed limit/cancel Actions use this signer.
 export const SESSION_ACTION_TYPES = {
   Action: [
     { name: "account", type: "address" },
@@ -150,10 +152,17 @@ export const feeKey = (action: Pick<SessionAction, "kind" | "vault">) =>
  * `fees` (default: this process's memory; false: none) signs with the fee this
  * kind of trade last needed, so a repeat trade is usually one signature. */
 export async function executeSession(
-  plan: AgentTradePlan,
+  plan: AgentExecutionPlan,
   sender: SessionSender,
   options: { maxNetworkFeeUsdg: bigint; fees?: FeeMemory | false },
 ): Promise<SessionReceipt> {
+  // 2026-10-21: orders add signed bytes; recheck parsed or mutated plans before signing.
+  const parsed = agentExecutionPlan.safeParse(
+    JSON.parse(JSON.stringify(plan, (_, v) => (typeof v === "bigint" ? v.toString() : v))),
+  );
+  if (!parsed.success) throw new BsktsError("Invalid agent action plan.", "BAD_RESPONSE");
+  plan = parsed.data;
+  if (plan.action.kind === 2 || plan.action.kind === 4) decodeAgentOrder(plan);
   const maxFee = options.maxNetworkFeeUsdg;
   // 2026-10-05: hosts can pass parsed plans directly, or mutate a client plan.
   // Recheck the reviewed vault binding before any signer callback runs.

@@ -4,12 +4,18 @@
 // Unsigned only: build tools return the transactions for the user's own wallet
 // to sign; nothing here holds a key or sends anything.
 //
-// Token budget: eleven tools (2026-10-11: + bskts_cover, bskts_agent_cover). The rules an agent must follow (units, approval
+// Token budget: twelve tools (2026-10-21: + bskts_agent_order). The rules an agent must follow (units, approval
 // order, never send a failed dry run) live in the descriptions, so they arrive
 // with the tools instead of costing a docs read.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { type BsktsClient, BsktsError, agentTypedData, coverTypedData } from "@bskts/sdk";
+import {
+  type BsktsClient,
+  BsktsError,
+  agentTypedData,
+  coverTypedData,
+  decodeAgentOrder,
+} from "@bskts/sdk";
 import type { Address } from "viem";
 import { z } from "zod";
 
@@ -240,6 +246,73 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
       annotations: READ,
     },
     (p) => run(() => client.agentSession(p)),
+  );
+  const delegatedOrder = async (p: Parameters<BsktsClient["buildAgentOrder"]>[0]) => {
+    const plan = await client.buildAgentOrder(p);
+    return { ...plan, terms: decodeAgentOrder(plan), typedData: agentTypedData(plan.action) };
+  };
+  server.registerTool(
+    "bskts_agent_order",
+    {
+      title: "Build a delegated limit order or cancellation",
+      description:
+        "UNSIGNED account Action for an approved agent key. Limit buys escrow USDG now and fill when 10-minute pool-average NAV <= triggerNav. Full amount counts toward today's turnover; expiry is capped to session expiry. Revocation does not cancel open orders: cancel them separately. Use bskts_account with the session account address to list orders. Host signs and relays using executeSessionOnce and a durable ID; preserve nonce after timeouts. No keys accepted or transactions sent by MCP.",
+      inputSchema: {
+        owner: address,
+        key: address,
+        kind: z.enum(["limit", "cancel"]),
+        ticker: ticker.optional(),
+        amountUsdg: z.number().min(5).optional(),
+        triggerNav: z.number().positive().optional(),
+        expiryDays: z.number().int().min(1).max(90).optional(),
+        slippageBps: z.number().int().min(50).max(1000).optional(),
+        orderId: z
+          .string()
+          .regex(/^0x[0-9a-fA-F]{64}$/)
+          .optional(),
+      },
+      annotations: BUILD,
+    },
+    (p) =>
+      run(() => {
+        if (p.kind === "cancel") {
+          if (
+            !p.orderId ||
+            p.ticker !== undefined ||
+            p.amountUsdg !== undefined ||
+            p.triggerNav !== undefined ||
+            p.expiryDays !== undefined ||
+            p.slippageBps !== undefined
+          )
+            throw new BsktsError("Cancellation needs only owner, key and orderId.", "BAD_REQUEST");
+          return delegatedOrder({
+            kind: "cancel",
+            owner: p.owner,
+            key: p.key,
+            orderId: p.orderId as `0x${string}`,
+          });
+        }
+        if (
+          !p.ticker ||
+          p.amountUsdg === undefined ||
+          p.triggerNav === undefined ||
+          p.orderId !== undefined
+        )
+          throw new BsktsError(
+            "Limit needs ticker, amountUsdg and triggerNav; omit orderId.",
+            "BAD_REQUEST",
+          );
+        return delegatedOrder({
+          kind: "limit",
+          owner: p.owner,
+          key: p.key,
+          ticker: p.ticker,
+          amountUsdg: p.amountUsdg,
+          triggerNav: p.triggerNav,
+          expiryDays: p.expiryDays,
+          slippageBps: p.slippageBps,
+        });
+      }),
   );
   server.registerTool(
     "bskts_agent_trade",

@@ -291,3 +291,18 @@ const result = await executeCoverOnce({
 `buildAgentCover` also takes `action: "request"` (with `pricePer1k`, locking the premium until
 an underwriter fills it) and `action: "cancel"` (with `listingId`, free). `coverPositions(account)`
 shows the cover held and its payouts, which the keeper makes automatically.
+
+## Delegated limit buys
+
+Release status: implemented in source, awaiting package publication and the matching API deployment. The methods below describe the upcoming release.
+
+Use `buildAgentOrder({ kind: "limit", owner, key, ticker, amountUsdg, triggerNav, expiryDays?, slippageBps? })` for an unsigned resting buy.
+The full budget is escrowed and counts against today's session turnover. The trigger must be positive and uses ten-minute pool-average NAV at or below the limit.
+Expiry is capped to the session; slippage defaults to 50 bps and cannot exceed the session cap. Grants below 50 bps cannot use the limit escrow.
+
+Use `orders(session.account)` to list open orders and `buildAgentOrder({ kind: "cancel", owner, key, orderId })` to cancel an account-owned limit, including an expired one.
+Cancellation refunds the same account, uses no turnover and does not replenish the daily cap. It may require a network fee.
+Both plans work with `executeSessionOnce` and a durable store, just like market trades. Never rebuild a timed-out placement with a new ID.
+
+`decodeAgentOrder(plan)` reads the signed terms; `limitOrderId(receipt.logs)` reads a placement ID from the pinned escrow's event without waiting for indexing.
+Creation is not a fill. The open-order list is not fill history. Revocation does not cancel existing orders; cancel before revoking or use the owner's wallet afterwards.

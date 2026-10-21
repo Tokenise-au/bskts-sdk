@@ -47,3 +47,5 @@ export {
 export type { CoverPending, CoverSender, CoverStore, CoverTypedData } from "./cover";
 export type { JournalStore } from "./session-once";
 export type { RelayerOptions } from "./agent";
+
+export { decodeAgentOrder, limitOrderId } from "./agent-orders";

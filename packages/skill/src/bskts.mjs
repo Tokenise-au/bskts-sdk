@@ -35,7 +35,7 @@ const RPC = "https://bskts.xyz/rpc";
 // keeps them equal). skills.sh tracks installs by content hash only, so this
 // is how a person or agent tells which build is running when debugging.
 // Bump it with any change under skills/ and tag main skill-v<version>.
-const SKILL_VERSION = "1.0.0";
+const SKILL_VERSION = "1.1.0";
 
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version
@@ -47,6 +47,9 @@ const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   buy TICKER USD [--slippage BPS]                          dry run: builds and simulates, sends nothing
   sell TICKER (--shares WEI|max | --fraction 0.5) [...]     dry run
   buy|sell ... --send --id ID                               the live trade, once per ID
+  limit TICKER USD --nav NAV [--days N] [--slippage BPS]  dry run; --send --id to place
+  orders                     open account limit and exit orders
+  cancel ORDER_ID            dry run; --send --id to cancel a limit
   trade-status --id ID       outcome of a journalled trade or cover action, never sends anything
 Weekend Cover (buying only; the owner must have turned Cover on). Actions dry run unless --send --id:
   cover-weeks                weeks open to buy, terms, limits, preset ranges
@@ -173,6 +176,22 @@ function simulationView(sim) {
 
 function planView(plan, side) {
   const a = plan.action;
+  if (a.kind === 2 || a.kind === 4)
+    return {
+      ticker: plan.ticker,
+      side,
+      ...(a.kind === 2 ? { amountUsdg: usd6(a.amount) } : {}),
+      terms: sdk.decodeAgentOrder(plan),
+      slippageBps: a.slippageBps,
+      remainingTodayUsdg: usd6(plan.status.remainingTodayUsdg),
+      ...simulationView(plan.simulation),
+      ...(plan.simulation?.ok === null
+        ? {
+            simulationNote:
+              "Not simulated: this unsigned plan checked permissions, budget and order terms. The relayer simulates the signed action before submission. Placement does not simulate a future fill.",
+          }
+        : {}),
+    };
   return {
     ticker: plan.ticker,
     side,
@@ -300,10 +319,11 @@ function trade(side) {
   return (pos, flags) =>
     withAgent(async ({ sdk, fileSessionStore, viem, client, owner, agent }) => {
       const ticker = String(pos[1] ?? "").toUpperCase();
-      if (!/^[A-Z0-9]{2,12}$/.test(ticker)) throw new CliError(`${side} needs a basket ticker.`);
+      if (side !== "cancel" && !/^[A-Z0-9]{2,12}$/.test(ticker))
+        throw new CliError(`${side} needs a basket ticker.`);
       const slippageBps = flags.slippage != null ? Number(flags.slippage) : undefined;
       let amountUsdg;
-      if (side === "buy") {
+      if (side === "buy" || side === "limit") {
         amountUsdg = Number(pos[2]);
         if (!(amountUsdg > 0))
           throw new CliError("buy TICKER USD: USD is a dollar amount, e.g. 10.");
@@ -329,6 +349,21 @@ function trade(side) {
           ticker,
           ...(slippageBps != null ? { slippageBps } : {}),
         };
+        if (side === "cancel")
+          return client.buildAgentOrder({
+            kind: "cancel",
+            owner,
+            key: agent.address,
+            orderId: pos[1],
+          });
+        if (side === "limit")
+          return client.buildAgentOrder({
+            ...args,
+            kind: "limit",
+            amountUsdg,
+            triggerNav: Number(flags.nav),
+            expiryDays: flags.days !== undefined ? Number(flags.days) : undefined,
+          });
         return side === "buy"
           ? client.buildAgentTrade({ ...args, side, amountUsdg })
           : client.buildAgentTrade({
@@ -363,7 +398,30 @@ function trade(side) {
         reconcile: (plan) => sdk.sessionActionState(chain, plan.action),
         build,
       });
-      out(outcomeView(id, result, existing !== undefined));
+      const recordedKind = Number((await store.load())?.plan?.action?.kind);
+      let orderId;
+      if (recordedKind === 2 && result.state === "confirmed") {
+        try {
+          orderId = sdk.limitOrderId(
+            (await chain.getTransactionReceipt({ hash: result.receipt.hash })).logs,
+          );
+        } catch {
+          /* confirmation is still valid if the receipt lookup is temporarily unavailable */
+        }
+      }
+      const view = outcomeView(id, result, existing !== undefined);
+      out({
+        ...view,
+        ...(orderId ? { orderId } : {}),
+        ...(result.state === "confirmed" && recordedKind === 2
+          ? {
+              note: "Limit placement confirmed. This is not confirmation of a fill; check orders and the transaction receipt.",
+            }
+          : {}),
+        ...(result.state === "confirmed" && recordedKind === 4
+          ? { note: "Limit cancellation confirmed; escrow returned to the account." }
+          : {}),
+      });
     });
 }
 
@@ -568,6 +626,13 @@ const COMMANDS = {
   markets,
   basket,
   positions,
+  limit: trade("limit"),
+  cancel: trade("cancel"),
+  orders: () =>
+    withAgent(async ({ client, owner, agent }) => {
+      const s = await client.agentSession({ owner, key: agent.address });
+      out({ ok: true, account: s.account, ...(await client.orders(s.account)) });
+    }),
   buy: trade("buy"),
   sell: trade("sell"),
   "trade-status": tradeStatus,

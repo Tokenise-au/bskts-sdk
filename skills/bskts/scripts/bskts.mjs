@@ -1337,7 +1337,66 @@ function formatEther$1(wei, unit = "wei") {
 function formatGwei$1(wei, unit = "wei") {
 	return format$2(wei, exponents.gwei - exponents[unit]);
 }
-var exponents, InvalidDecimalsError;
+/**
+* Parses a `string` representation of a Value to `bigint` (multiplied by the given exponent).
+*
+* @example
+* ```ts twoslash
+* import { Value } from 'ox'
+*
+* Value.from('420', 9)
+* // @log: 420000000000n
+* ```
+*
+* @param value - The string representation of the Value.
+* @param decimals - The exponent to multiply the Value by.
+* @returns The `bigint` representation of the Value.
+*/
+function from$9(value, decimals = 0) {
+	if (!Number.isInteger(decimals) || decimals < 0) throw new InvalidDecimalsError({ decimals });
+	if (!/^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(value)) throw new InvalidDecimalNumberError({ value });
+	let [integer = "", fraction = "0"] = value.split(".");
+	const negative = integer.startsWith("-");
+	if (negative) integer = integer.slice(1);
+	if (integer === "") integer = "0";
+	fraction = fraction.replace(/(0+)$/, "");
+	if (decimals === 0) {
+		if (fraction.length > 0 && Number.parseInt(fraction[0], 10) >= 5) integer = `${BigInt(integer) + 1n}`;
+		fraction = "";
+	} else if (fraction.length > decimals) {
+		const left = fraction.slice(0, decimals);
+		if (Number.parseInt(fraction.slice(decimals, decimals + 1), 10) >= 5) {
+			const carried = carry(left);
+			if (carried.length > decimals) {
+				fraction = carried.slice(1);
+				integer = `${BigInt(integer) + 1n}`;
+			} else fraction = carried;
+		} else fraction = left;
+	} else fraction = fraction.padEnd(decimals, "0");
+	return BigInt(`${negative ? "-" : ""}${integer}${fraction}`);
+}
+/**
+* Adds 1 to a digit string with carry, returning a string of the same length
+* unless the carry overflows past the most-significant digit (in which case
+* the returned string is one digit longer).
+*
+* @internal
+*/
+function carry(digits) {
+	const out = digits.split("");
+	let i = out.length - 1;
+	while (i >= 0) {
+		const d = Number.parseInt(out[i], 10) + 1;
+		if (d < 10) {
+			out[i] = String(d);
+			return out.join("");
+		}
+		out[i] = "0";
+		i--;
+	}
+	return `1${out.join("")}`;
+}
+var exponents, InvalidDecimalNumberError, InvalidDecimalsError;
 var init_Value = __esmMin((() => {
 	exponents = {
 		wei: 0,
@@ -1345,6 +1404,17 @@ var init_Value = __esmMin((() => {
 		szabo: 12,
 		finney: 15,
 		ether: 18
+	};
+	InvalidDecimalNumberError = class extends Error {
+		constructor({ value }) {
+			super(`Value \`${value}\` is not a valid decimal number.`);
+			Object.defineProperty(this, "name", {
+				enumerable: true,
+				configurable: true,
+				writable: true,
+				value: "Value.InvalidDecimalNumberError"
+			});
+		}
 	};
 	InvalidDecimalsError = class extends Error {
 		constructor({ decimals }) {
@@ -17622,6 +17692,3971 @@ function formatUnits(value, decimals) {
 }
 
 //#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/unit/parseUnits.js
+init_Value();
+/**
+* Multiplies a string representation of a number by a given exponent of base 10 (10exponent).
+*
+* - Docs: https://viem.sh/docs/utilities/parseUnits
+*
+* @example
+* import { parseUnits } from 'viem'
+*
+* parseUnits('420', 9)
+* // 420000000000n
+*/
+function parseUnits(value, decimals) {
+	return from$9(value, decimals);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/estimateContractGas.js
+init_parseAccount();
+init_encodeFunctionData();
+/**
+* Estimates the gas required to successfully execute a contract write function call.
+*
+* - Docs: https://viem.sh/docs/contract/estimateContractGas
+*
+* Internally, uses a [Public Client](https://viem.sh/docs/clients/public) to call the [`estimateGas` action](https://viem.sh/docs/actions/public/estimateGas) with [ABI-encoded `data`](https://viem.sh/docs/contract/encodeFunctionData).
+*
+* @param client - Client to use
+* @param parameters - {@link EstimateContractGasParameters}
+* @returns The gas estimate (in wei). {@link EstimateContractGasReturnType}
+*
+* @example
+* import { createPublicClient, http, parseAbi } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { estimateContractGas } from 'viem/contract'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const gas = await estimateContractGas(client, {
+*   address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
+*   abi: parseAbi(['function mint() public']),
+*   functionName: 'mint',
+*   account: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
+* })
+*/
+async function estimateContractGas(client, parameters) {
+	const { abi, address, args, functionName, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, ...request } = parameters;
+	const data = encodeFunctionData({
+		abi,
+		args,
+		functionName
+	});
+	try {
+		return await getAction(client, estimateGas, "estimateGas")({
+			data: `${data}${dataSuffix ? dataSuffix.replace("0x", "") : ""}`,
+			to: address,
+			...request
+		});
+	} catch (error) {
+		const account = request.account ? parseAccount(request.account) : void 0;
+		throw getContractError(error, {
+			abi,
+			address,
+			args,
+			docsPath: "/docs/contract/estimateContractGas",
+			functionName,
+			sender: account?.address
+		});
+	}
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/simulateContract.js
+init_parseAccount();
+init_decodeFunctionResult();
+init_encodeFunctionData();
+init_call();
+/**
+* Simulates/validates a contract interaction. This is useful for retrieving **return data** and **revert reasons** of contract write functions.
+*
+* - Docs: https://viem.sh/docs/contract/simulateContract
+* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/contracts_writing-to-contracts
+*
+* This function does not require gas to execute and _**does not**_ change the state of the blockchain. It is almost identical to [`readContract`](https://viem.sh/docs/contract/readContract), but also supports contract write functions.
+*
+* Internally, uses a [Public Client](https://viem.sh/docs/clients/public) to call the [`call` action](https://viem.sh/docs/actions/public/call) with [ABI-encoded `data`](https://viem.sh/docs/contract/encodeFunctionData).
+*
+* @param client - Client to use
+* @param parameters - {@link SimulateContractParameters}
+* @returns The simulation result and write request. {@link SimulateContractReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { simulateContract } from 'viem/contract'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const result = await simulateContract(client, {
+*   address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
+*   abi: parseAbi(['function mint(uint32) view returns (uint32)']),
+*   functionName: 'mint',
+*   args: ['69420'],
+*   account: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e',
+* })
+*/
+async function simulateContract(client, parameters) {
+	const { abi, address, args, functionName, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, ...callRequest } = parameters;
+	const account = callRequest.account ? parseAccount(callRequest.account) : client.account;
+	const calldata = encodeFunctionData({
+		abi,
+		args,
+		functionName
+	});
+	try {
+		const { data } = await getAction(client, call, "call")({
+			batch: false,
+			data: `${calldata}${dataSuffix ? dataSuffix.replace("0x", "") : ""}`,
+			to: address,
+			...callRequest,
+			account
+		});
+		return {
+			result: decodeFunctionResult({
+				abi,
+				args,
+				functionName,
+				data: data || "0x"
+			}),
+			request: {
+				abi: abi.filter((abiItem) => "name" in abiItem && abiItem.name === parameters.functionName),
+				address,
+				args,
+				dataSuffix,
+				functionName,
+				...callRequest,
+				account
+			}
+		};
+	} catch (error) {
+		throw getContractError(error, {
+			abi,
+			address,
+			args,
+			docsPath: "/docs/contract/simulateContract",
+			functionName,
+			sender: account?.address
+		});
+	}
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/uid.js
+const size = 256;
+let index = size;
+let buffer;
+function uid(length = 11) {
+	if (!buffer || index + length > size * 2) {
+		buffer = "";
+		index = 0;
+		for (let i = 0; i < size; i++) buffer += (256 + Math.random() * 256 | 0).toString(16).substring(1);
+	}
+	return buffer.substring(index, index++ + length);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/createClient.js
+init_parseAccount();
+function createClient(parameters) {
+	const { batch, chain, ccipRead, dataSuffix, key = "base", name = "Base Client", tokens, type = "base" } = parameters;
+	const experimental_blockTag = parameters.experimental_blockTag ?? (typeof chain?.experimental_preconfirmationTime === "number" ? "pending" : void 0);
+	const blockTime = chain?.blockTime ?? 12e3;
+	const defaultPollingInterval = Math.min(Math.max(Math.floor(blockTime / 2), 500), 4e3);
+	const pollingInterval = parameters.pollingInterval ?? defaultPollingInterval;
+	const cacheTime = parameters.cacheTime ?? pollingInterval;
+	const account = parameters.account ? parseAccount(parameters.account) : void 0;
+	const { config, request, value } = parameters.transport({
+		account,
+		chain,
+		pollingInterval
+	});
+	const client = {
+		account,
+		batch,
+		cacheTime,
+		ccipRead,
+		chain,
+		dataSuffix,
+		key,
+		name,
+		pollingInterval,
+		request,
+		tokens,
+		transport: {
+			...config,
+			...value
+		},
+		type,
+		uid: uid(),
+		...experimental_blockTag ? { experimental_blockTag } : {}
+	};
+	function extend(base) {
+		return (extendFn) => {
+			const extended = extendFn(base);
+			for (const key in client) delete extended[key];
+			const combined = {
+				...base,
+				...extended
+			};
+			for (const key in extended) {
+				const a = base[key];
+				const b = extended[key];
+				if (isPlainObject$1(a) && isPlainObject$1(b)) combined[key] = {
+					...a,
+					...b
+				};
+			}
+			return Object.assign(combined, { extend: extend(combined) });
+		};
+	}
+	return Object.assign(client, { extend: extend(client) });
+}
+/** Whether `value` is a plain object (`{}`), as opposed to a function, array,
+* or class instance. Used to decide which extension namespaces to merge. */
+function isPlainObject$1(value) {
+	if (typeof value !== "object" || value === null) return false;
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
+}
+/**
+* Binds an action function to a `client`, returning a parameter-only version
+* along with any helpers the action exposes. Helpers that need a client
+* (`.call`, `.calls`, `.callWithPeriod`, `.estimateGas`, `.prepare`,
+* `.prepareRecipient`, `.predict`, `.simulate`) are bound to `client`;
+* pure helpers (`.extractEvent`, `.extractEvents`) are copied as-is. Used
+* by decorators that attach namespaced actions to a Client.
+* @internal
+*/
+function bindActionDecorators(client, action) {
+	const wrapped = (parameters = {}) => action(client, parameters);
+	for (const key of [
+		"call",
+		"calls",
+		"callWithPeriod",
+		"estimateGas",
+		"prepare",
+		"prepareRecipient",
+		"predict",
+		"simulate"
+	]) if (Object.hasOwn(action, key)) {
+		const helper = action[key];
+		wrapped[key] = (args = {}) => {
+			if (helper.length === 1) return helper(args);
+			return helper(client, args);
+		};
+	}
+	for (const key of ["extractEvent", "extractEvents"]) if (Object.hasOwn(action, key)) wrapped[key] = action[key];
+	return wrapped;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/errors.js
+init_base();
+init_contract$1();
+function isNullUniversalResolverError(err) {
+	if (!(err instanceof BaseError$2)) return false;
+	const cause = err.walk((e) => e instanceof ContractFunctionRevertedError);
+	if (!(cause instanceof ContractFunctionRevertedError)) return false;
+	if (cause.data?.errorName === "HttpError") return true;
+	if (cause.data?.errorName === "ResolverError") return true;
+	if (cause.data?.errorName === "ResolverNotContract") return true;
+	if (cause.data?.errorName === "ResolverNotFound") return true;
+	if (cause.data?.errorName === "ReverseAddressMismatch") return true;
+	if (cause.data?.errorName === "UnsupportedResolverProfile") return true;
+	return false;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/encodedLabelToLabelhash.js
+init_isHex();
+function encodedLabelToLabelhash(label) {
+	if (label.length !== 66) return null;
+	if (label.indexOf("[") !== 0) return null;
+	if (label.indexOf("]") !== 65) return null;
+	const hash = `0x${label.slice(1, 65)}`;
+	if (!isHex(hash)) return null;
+	return hash;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/namehash.js
+init_concat();
+init_toBytes();
+init_toHex();
+init_keccak256();
+/**
+* @description Hashes ENS name
+*
+* - Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `namehash`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
+*
+* @example
+* namehash('wevm.eth')
+* '0x08c85f2f4059e930c45a6aeff9dcd3bd95dc3c5c1cddef6a0626b31152248560'
+*
+* @link https://eips.ethereum.org/EIPS/eip-137
+*/
+function namehash(name) {
+	let result = (/* @__PURE__ */ new Uint8Array(32)).fill(0);
+	if (!name) return bytesToHex$1(result);
+	const labels = name.split(".");
+	for (let i = labels.length - 1; i >= 0; i -= 1) {
+		const hashFromEncodedLabel = encodedLabelToLabelhash(labels[i]);
+		const hashed = hashFromEncodedLabel ? toBytes$1(hashFromEncodedLabel) : keccak256$1(stringToBytes(labels[i]), "bytes");
+		result = keccak256$1(concat$1([result, hashed]), "bytes");
+	}
+	return bytesToHex$1(result);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/encodeLabelhash.js
+function encodeLabelhash(hash) {
+	return `[${hash.slice(2)}]`;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/labelhash.js
+init_toBytes();
+init_toHex();
+init_keccak256();
+/**
+* @description Hashes ENS label
+*
+* - Since ENS labels prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS labels](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `labelhash`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
+*
+* @example
+* labelhash('eth')
+* '0x4f5b812789fc606be1b3b16908db13fc7a9adf7ca72641f84d75b47069d3d7f0'
+*/
+function labelhash(label) {
+	const result = (/* @__PURE__ */ new Uint8Array(32)).fill(0);
+	if (!label) return bytesToHex$1(result);
+	return encodedLabelToLabelhash(label) || keccak256$1(stringToBytes(label));
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/packetToBytes.js
+init_toBytes();
+function packetToBytes(packet) {
+	const value = packet.replace(/^\.|\.$/gm, "");
+	if (value.length === 0) return /* @__PURE__ */ new Uint8Array(1);
+	const bytes = new Uint8Array(stringToBytes(value).byteLength + 2);
+	let offset = 0;
+	const list = value.split(".");
+	for (let i = 0; i < list.length; i++) {
+		let encoded = stringToBytes(list[i]);
+		if (encoded.byteLength > 255) encoded = stringToBytes(encodeLabelhash(labelhash(list[i])));
+		bytes[offset] = encoded.length;
+		bytes.set(encoded, offset + 1);
+		offset += encoded.length + 1;
+	}
+	if (bytes.byteLength !== offset + 1) return bytes.slice(0, offset + 1);
+	return bytes;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsAddress.js
+init_abis();
+init_decodeFunctionResult();
+init_encodeFunctionData();
+init_getAddress();
+init_getChainContractAddress();
+init_size();
+init_trim();
+init_toHex();
+init_localBatchGatewayRequest();
+/**
+* Gets address for ENS name.
+*
+* - Docs: https://viem.sh/docs/ens/actions/getEnsAddress
+* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
+*
+* Calls `resolve(bytes, bytes)` on ENS Universal Resolver Contract.
+*
+* Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `getEnsAddress`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
+*
+* @param client - Client to use
+* @param parameters - {@link GetEnsAddressParameters}
+* @returns Address for ENS name or `null` if not found. {@link GetEnsAddressReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getEnsAddress, normalize } from 'viem/ens'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const ensAddress = await getEnsAddress(client, {
+*   name: normalize('wevm.eth'),
+* })
+* // '0xd2135CfB216b74109775236E36d4b433F1DF507B'
+*/
+async function getEnsAddress(client, parameters) {
+	const { blockNumber, blockTag, coinType, name, gatewayUrls, strict } = parameters;
+	const { chain } = client;
+	const universalResolverAddress = (() => {
+		if (parameters.universalResolverAddress) return parameters.universalResolverAddress;
+		if (!chain) throw new Error("client chain not configured. universalResolverAddress is required.");
+		return getChainContractAddress({
+			blockNumber,
+			chain,
+			contract: "ensUniversalResolver"
+		});
+	})();
+	const tlds = chain?.ensTlds;
+	if (tlds && !tlds.some((tld) => name.endsWith(tld))) return null;
+	const args = (() => {
+		if (coinType != null) return [namehash(name), BigInt(coinType)];
+		return [namehash(name)];
+	})();
+	try {
+		const functionData = encodeFunctionData({
+			abi: addressResolverAbi,
+			functionName: "addr",
+			args
+		});
+		const readContractParameters = {
+			address: universalResolverAddress,
+			abi: universalResolverResolveAbi,
+			functionName: "resolveWithGateways",
+			args: [
+				toHex(packetToBytes(name)),
+				functionData,
+				gatewayUrls ?? ["x-batch-gateway:true"]
+			],
+			blockNumber,
+			blockTag
+		};
+		const res = await getAction(client, readContract, "readContract")(readContractParameters);
+		if (res[0] === "0x") return null;
+		const address = decodeAddress({
+			coinType,
+			data: res[0],
+			args
+		});
+		if (address === "0x") return null;
+		if (trim$1(address) === "0x00") return null;
+		return address;
+	} catch (err) {
+		if (strict) throw err;
+		if (isNullUniversalResolverError(err)) return null;
+		throw err;
+	}
+}
+function decodeAddress({ coinType, data, args }) {
+	try {
+		return decodeFunctionResult({
+			abi: addressResolverAbi,
+			args,
+			functionName: "addr",
+			data
+		});
+	} catch (err) {
+		if (coinType == null) throw err;
+		const address = trim$1(data);
+		if (size$3(address) === 20) return getAddress(address);
+		throw err;
+	}
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/errors/ens.js
+init_base();
+var EnsAvatarInvalidMetadataError = class extends BaseError$2 {
+	constructor({ data }) {
+		super("Unable to extract image from metadata. The metadata may be malformed or invalid.", {
+			metaMessages: [
+				"- Metadata must be a JSON object with at least an `image`, `image_url` or `image_data` property.",
+				"",
+				`Provided data: ${JSON.stringify(data)}`
+			],
+			name: "EnsAvatarInvalidMetadataError"
+		});
+	}
+};
+var EnsAvatarInvalidNftUriError = class extends BaseError$2 {
+	constructor({ reason }) {
+		super(`ENS NFT avatar URI is invalid. ${reason}`, { name: "EnsAvatarInvalidNftUriError" });
+	}
+};
+var EnsAvatarUriResolutionError = class extends BaseError$2 {
+	constructor({ uri }) {
+		super(`Unable to resolve ENS avatar URI "${uri}". The URI may be malformed, invalid, or does not respond with a valid image.`, { name: "EnsAvatarUriResolutionError" });
+	}
+};
+var EnsAvatarUnsupportedNamespaceError = class extends BaseError$2 {
+	constructor({ namespace }) {
+		super(`ENS NFT avatar namespace "${namespace}" is not supported. Must be "erc721" or "erc1155".`, { name: "EnsAvatarUnsupportedNamespaceError" });
+	}
+};
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/avatar/utils.js
+const networkRegex = /(?<protocol>https?:\/\/[^/]*|ipfs:\/|ipns:\/|ar:\/)?(?<root>\/)?(?<subpath>ipfs\/|ipns\/)?(?<target>[\w\-.]+)(?<subtarget>\/.*)?/;
+const ipfsHashRegex = /^(Qm[1-9A-HJ-NP-Za-km-z]{44,}|b[A-Za-z2-7]{58,}|B[A-Z2-7]{58,}|z[1-9A-HJ-NP-Za-km-z]{48,}|F[0-9A-F]{50,})(\/(?<target>[\w\-.]+))?(?<subtarget>\/.*)?$/;
+const base64Regex = /^data:([a-zA-Z\-/+]*);base64,([^"].*)/;
+const dataURIRegex = /^data:([a-zA-Z\-/+]*)?(;[a-zA-Z0-9].*?)?(,)/;
+/** @internal */
+async function isImageUri(uri) {
+	try {
+		const res = await fetch(uri, { method: "HEAD" });
+		if (res.status === 200) return res.headers.get("content-type")?.startsWith("image/");
+		return false;
+	} catch (error) {
+		if (typeof error === "object" && typeof error.response !== "undefined") return false;
+		if (!Object.hasOwn(globalThis, "Image")) return false;
+		return new Promise((resolve) => {
+			const img = new Image();
+			img.onload = () => {
+				resolve(true);
+			};
+			img.onerror = () => {
+				resolve(false);
+			};
+			img.src = uri;
+		});
+	}
+}
+/** @internal */
+function getGateway(custom, defaultGateway) {
+	if (!custom) return defaultGateway;
+	if (custom.endsWith("/")) return custom.slice(0, -1);
+	return custom;
+}
+function resolveAvatarUri({ uri, gatewayUrls }) {
+	const isEncoded = base64Regex.test(uri);
+	if (isEncoded) return {
+		uri,
+		isOnChain: true,
+		isEncoded
+	};
+	const ipfsGateway = getGateway(gatewayUrls?.ipfs, "https://ipfs.io");
+	const arweaveGateway = getGateway(gatewayUrls?.arweave, "https://arweave.net");
+	const { protocol, subpath, target, subtarget = "" } = uri.match(networkRegex)?.groups || {};
+	const isIPNS = protocol === "ipns:/" || subpath === "ipns/";
+	const isIPFS = protocol === "ipfs:/" || subpath === "ipfs/" || ipfsHashRegex.test(uri);
+	if (uri.startsWith("http") && !isIPNS && !isIPFS) {
+		let replacedUri = uri;
+		if (gatewayUrls?.arweave) replacedUri = uri.replace(/https:\/\/arweave.net/g, gatewayUrls?.arweave);
+		return {
+			uri: replacedUri,
+			isOnChain: false,
+			isEncoded: false
+		};
+	}
+	if ((isIPNS || isIPFS) && target) return {
+		uri: `${ipfsGateway}/${isIPNS ? "ipns" : "ipfs"}/${target}${subtarget}`,
+		isOnChain: false,
+		isEncoded: false
+	};
+	if (protocol === "ar:/" && target) return {
+		uri: `${arweaveGateway}/${target}${subtarget || ""}`,
+		isOnChain: false,
+		isEncoded: false
+	};
+	let parsedUri = uri.replace(dataURIRegex, "");
+	if (parsedUri.startsWith("<svg")) parsedUri = `data:image/svg+xml;base64,${btoa(parsedUri)}`;
+	if (parsedUri.startsWith("data:") || parsedUri.startsWith("{")) return {
+		uri: parsedUri,
+		isOnChain: true,
+		isEncoded: false
+	};
+	throw new EnsAvatarUriResolutionError({ uri });
+}
+function getJsonImage(data) {
+	if (typeof data !== "object" || !("image" in data) && !("image_url" in data) && !("image_data" in data)) throw new EnsAvatarInvalidMetadataError({ data });
+	return data.image || data.image_url || data.image_data;
+}
+async function getMetadataAvatarUri({ gatewayUrls, uri }) {
+	try {
+		return await parseAvatarUri({
+			gatewayUrls,
+			uri: getJsonImage(await fetch(uri).then((res) => res.json()))
+		});
+	} catch {
+		throw new EnsAvatarUriResolutionError({ uri });
+	}
+}
+async function parseAvatarUri({ gatewayUrls, uri }) {
+	const { uri: resolvedURI, isOnChain } = resolveAvatarUri({
+		uri,
+		gatewayUrls
+	});
+	if (isOnChain) return resolvedURI;
+	if (await isImageUri(resolvedURI)) return resolvedURI;
+	throw new EnsAvatarUriResolutionError({ uri });
+}
+function parseNftUri(uri_) {
+	let uri = uri_;
+	if (uri.startsWith("did:nft:")) uri = uri.replace("did:nft:", "").replace(/_/g, "/");
+	const [reference, asset_namespace, tokenID] = uri.split("/");
+	const [eip_namespace, chainID] = reference.split(":");
+	const [erc_namespace, contractAddress] = asset_namespace.split(":");
+	if (!eip_namespace || eip_namespace.toLowerCase() !== "eip155") throw new EnsAvatarInvalidNftUriError({ reason: "Only EIP-155 supported" });
+	if (!chainID) throw new EnsAvatarInvalidNftUriError({ reason: "Chain ID not found" });
+	if (!contractAddress) throw new EnsAvatarInvalidNftUriError({ reason: "Contract address not found" });
+	if (!tokenID) throw new EnsAvatarInvalidNftUriError({ reason: "Token ID not found" });
+	if (!erc_namespace) throw new EnsAvatarInvalidNftUriError({ reason: "ERC namespace not found" });
+	return {
+		chainID: Number.parseInt(chainID, 10),
+		namespace: erc_namespace.toLowerCase(),
+		contractAddress,
+		tokenID
+	};
+}
+async function getNftTokenUri(client, { nft }) {
+	if (nft.namespace === "erc721") return readContract(client, {
+		address: nft.contractAddress,
+		abi: [{
+			name: "tokenURI",
+			type: "function",
+			stateMutability: "view",
+			inputs: [{
+				name: "tokenId",
+				type: "uint256"
+			}],
+			outputs: [{
+				name: "",
+				type: "string"
+			}]
+		}],
+		functionName: "tokenURI",
+		args: [BigInt(nft.tokenID)]
+	});
+	if (nft.namespace === "erc1155") return readContract(client, {
+		address: nft.contractAddress,
+		abi: [{
+			name: "uri",
+			type: "function",
+			stateMutability: "view",
+			inputs: [{
+				name: "_id",
+				type: "uint256"
+			}],
+			outputs: [{
+				name: "",
+				type: "string"
+			}]
+		}],
+		functionName: "uri",
+		args: [BigInt(nft.tokenID)]
+	});
+	throw new EnsAvatarUnsupportedNamespaceError({ namespace: nft.namespace });
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/avatar/parseAvatarRecord.js
+async function parseAvatarRecord(client, { gatewayUrls, record }) {
+	if (/eip155:/i.test(record)) return parseNftAvatarUri(client, {
+		gatewayUrls,
+		record
+	});
+	return parseAvatarUri({
+		uri: record,
+		gatewayUrls
+	});
+}
+async function parseNftAvatarUri(client, { gatewayUrls, record }) {
+	const nft = parseNftUri(record);
+	const nftUri = await getNftTokenUri(client, { nft });
+	const { uri: resolvedNftUri, isOnChain, isEncoded } = resolveAvatarUri({
+		uri: nftUri,
+		gatewayUrls
+	});
+	if (isOnChain && (resolvedNftUri.includes("data:application/json;base64,") || resolvedNftUri.startsWith("{"))) {
+		const encodedJson = isEncoded ? atob(resolvedNftUri.replace("data:application/json;base64,", "")) : resolvedNftUri;
+		const decoded = JSON.parse(encodedJson);
+		return parseAvatarUri({
+			uri: getJsonImage(decoded),
+			gatewayUrls
+		});
+	}
+	let uriTokenId = nft.tokenID;
+	if (nft.namespace === "erc1155") uriTokenId = uriTokenId.replace("0x", "").padStart(64, "0");
+	return getMetadataAvatarUri({
+		gatewayUrls,
+		uri: resolvedNftUri.replace(/(?:0x)?{id}/, uriTokenId)
+	});
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsText.js
+init_abis();
+init_decodeFunctionResult();
+init_encodeFunctionData();
+init_getChainContractAddress();
+init_toHex();
+init_localBatchGatewayRequest();
+/**
+* Gets a text record for specified ENS name.
+*
+* - Docs: https://viem.sh/docs/ens/actions/getEnsResolver
+* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
+*
+* Calls `resolve(bytes, bytes)` on ENS Universal Resolver Contract.
+*
+* Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `getEnsAddress`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
+*
+* @param client - Client to use
+* @param parameters - {@link GetEnsTextParameters}
+* @returns Address for ENS resolver. {@link GetEnsTextReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getEnsText, normalize } from 'viem/ens'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const twitterRecord = await getEnsText(client, {
+*   name: normalize('wevm.eth'),
+*   key: 'com.twitter',
+* })
+* // 'wevm_dev'
+*/
+async function getEnsText(client, parameters) {
+	const { blockNumber, blockTag, key, name, gatewayUrls, strict } = parameters;
+	const { chain } = client;
+	const universalResolverAddress = (() => {
+		if (parameters.universalResolverAddress) return parameters.universalResolverAddress;
+		if (!chain) throw new Error("client chain not configured. universalResolverAddress is required.");
+		return getChainContractAddress({
+			blockNumber,
+			chain,
+			contract: "ensUniversalResolver"
+		});
+	})();
+	const tlds = chain?.ensTlds;
+	if (tlds && !tlds.some((tld) => name.endsWith(tld))) return null;
+	try {
+		const readContractParameters = {
+			address: universalResolverAddress,
+			abi: universalResolverResolveAbi,
+			args: [
+				toHex(packetToBytes(name)),
+				encodeFunctionData({
+					abi: textResolverAbi,
+					functionName: "text",
+					args: [namehash(name), key]
+				}),
+				gatewayUrls ?? ["x-batch-gateway:true"]
+			],
+			functionName: "resolveWithGateways",
+			blockNumber,
+			blockTag
+		};
+		const res = await getAction(client, readContract, "readContract")(readContractParameters);
+		if (res[0] === "0x") return null;
+		const record = decodeFunctionResult({
+			abi: textResolverAbi,
+			functionName: "text",
+			data: res[0]
+		});
+		return record === "" ? null : record;
+	} catch (err) {
+		if (strict) throw err;
+		if (isNullUniversalResolverError(err)) return null;
+		throw err;
+	}
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsAvatar.js
+/**
+* Gets the avatar of an ENS name.
+*
+* - Docs: https://viem.sh/docs/ens/actions/getEnsAvatar
+* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
+*
+* Calls [`getEnsText`](https://viem.sh/docs/ens/actions/getEnsText) with `key` set to `'avatar'`.
+*
+* Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `getEnsAddress`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
+*
+* @param client - Client to use
+* @param parameters - {@link GetEnsAvatarParameters}
+* @returns Avatar URI or `null` if not found. {@link GetEnsAvatarReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getEnsAvatar, normalize } from 'viem/ens'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const ensAvatar = await getEnsAvatar(client, {
+*   name: normalize('wevm.eth'),
+* })
+* // 'https://ipfs.io/ipfs/Qma8mnp6xV3J2cRNf3mTth5C8nV11CAnceVinc3y8jSbio'
+*/
+async function getEnsAvatar(client, { blockNumber, blockTag, assetGatewayUrls, name, gatewayUrls, strict, universalResolverAddress }) {
+	const record = await getAction(client, getEnsText, "getEnsText")({
+		blockNumber,
+		blockTag,
+		key: "avatar",
+		name,
+		universalResolverAddress,
+		gatewayUrls,
+		strict
+	});
+	if (!record) return null;
+	try {
+		return await parseAvatarRecord(client, {
+			record,
+			gatewayUrls: assetGatewayUrls
+		});
+	} catch {
+		return null;
+	}
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsName.js
+init_abis();
+init_getChainContractAddress();
+init_localBatchGatewayRequest();
+/**
+* Gets primary name for specified address.
+*
+* - Docs: https://viem.sh/docs/ens/actions/getEnsName
+* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
+*
+* Calls `reverse(bytes)` on ENS Universal Resolver Contract to "reverse resolve" the address to the primary ENS name.
+*
+* @param client - Client to use
+* @param parameters - {@link GetEnsNameParameters}
+* @returns Name or `null` if not found. {@link GetEnsNameReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getEnsName } from 'viem/ens'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const ensName = await getEnsName(client, {
+*   address: '0xd2135CfB216b74109775236E36d4b433F1DF507B',
+* })
+* // 'wevm.eth'
+*/
+async function getEnsName(client, parameters) {
+	const { address, blockNumber, blockTag, coinType = 60n, gatewayUrls, strict } = parameters;
+	const { chain } = client;
+	const universalResolverAddress = (() => {
+		if (parameters.universalResolverAddress) return parameters.universalResolverAddress;
+		if (!chain) throw new Error("client chain not configured. universalResolverAddress is required.");
+		return getChainContractAddress({
+			blockNumber,
+			chain,
+			contract: "ensUniversalResolver"
+		});
+	})();
+	try {
+		const readContractParameters = {
+			address: universalResolverAddress,
+			abi: universalResolverReverseAbi,
+			args: [
+				address,
+				coinType,
+				gatewayUrls ?? ["x-batch-gateway:true"]
+			],
+			functionName: "reverseWithGateways",
+			blockNumber,
+			blockTag
+		};
+		const [name] = await getAction(client, readContract, "readContract")(readContractParameters);
+		return name || null;
+	} catch (err) {
+		if (strict) throw err;
+		if (isNullUniversalResolverError(err)) return null;
+		throw err;
+	}
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsResolver.js
+init_getChainContractAddress();
+init_toHex();
+/**
+* Gets resolver for ENS name.
+*
+* - Docs: https://viem.sh/docs/ens/actions/getEnsResolver
+* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
+*
+* Calls `findResolver(bytes)` on ENS Universal Resolver Contract to retrieve the resolver of an ENS name.
+*
+* Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `getEnsAddress`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
+*
+* @param client - Client to use
+* @param parameters - {@link GetEnsResolverParameters}
+* @returns Address for ENS resolver. {@link GetEnsResolverReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getEnsResolver, normalize } from 'viem/ens'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const resolverAddress = await getEnsResolver(client, {
+*   name: normalize('wevm.eth'),
+* })
+* // '0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41'
+*/
+async function getEnsResolver(client, parameters) {
+	const { blockNumber, blockTag, name } = parameters;
+	const { chain } = client;
+	const universalResolverAddress = (() => {
+		if (parameters.universalResolverAddress) return parameters.universalResolverAddress;
+		if (!chain) throw new Error("client chain not configured. universalResolverAddress is required.");
+		return getChainContractAddress({
+			blockNumber,
+			chain,
+			contract: "ensUniversalResolver"
+		});
+	})();
+	const tlds = chain?.ensTlds;
+	if (tlds && !tlds.some((tld) => name.endsWith(tld))) throw new Error(`${name} is not a valid ENS TLD (${tlds?.join(", ")}) for chain "${chain.name}" (id: ${chain.id}).`);
+	const [resolverAddress] = await getAction(client, readContract, "readContract")({
+		address: universalResolverAddress,
+		abi: [{
+			inputs: [{ type: "bytes" }],
+			name: "findResolver",
+			outputs: [
+				{ type: "address" },
+				{ type: "bytes32" },
+				{ type: "uint256" }
+			],
+			stateMutability: "view",
+			type: "function"
+		}],
+		functionName: "findResolver",
+		args: [toHex(packetToBytes(name))],
+		blockNumber,
+		blockTag
+	});
+	return resolverAddress;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/createAccessList.js
+init_parseAccount();
+init_base();
+init_toHex();
+init_getCallError();
+init_extract();
+init_transactionRequest();
+init_assertRequest();
+/**
+* Creates an EIP-2930 access list.
+*
+* - Docs: https://viem.sh/docs/actions/public/createAccessList
+* - JSON-RPC Methods: `eth_createAccessList`
+*
+* @param client - Client to use
+* @param parameters - {@link CreateAccessListParameters}
+* @returns The access list. {@link CreateAccessListReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { createAccessList } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const data = await createAccessList(client, {
+*   account: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
+*   data: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+* })
+*/
+async function createAccessList(client, args) {
+	const { account: account_ = client.account, blockNumber, blockTag = "latest", blobs, data, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, to, value, ...rest } = args;
+	const account = account_ ? parseAccount(account_) : void 0;
+	try {
+		assertRequest(args);
+		const block = (typeof blockNumber === "bigint" ? numberToHex(blockNumber) : void 0) || blockTag;
+		const chainFormat = client.chain?.formatters?.transactionRequest?.format;
+		const request = (chainFormat || formatTransactionRequest)({
+			...extract$1(rest, { format: chainFormat }),
+			account,
+			blobs,
+			data,
+			gas,
+			gasPrice,
+			maxFeePerBlobGas,
+			maxFeePerGas,
+			maxPriorityFeePerGas,
+			to,
+			value
+		}, "createAccessList");
+		const response = await client.request({
+			method: "eth_createAccessList",
+			params: [request, block]
+		});
+		if (response.error) throw new BaseError$2(response.error, { details: response.error });
+		return {
+			accessList: response.accessList,
+			gasUsed: BigInt(response.gasUsed)
+		};
+	} catch (err) {
+		throw getCallError(err, {
+			...args,
+			account,
+			chain: client.chain
+		});
+	}
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/createBlockFilter.js
+/**
+* Creates a [`Filter`](https://viem.sh/docs/glossary/types#filter) to listen for new block hashes that can be used with [`getFilterChanges`](https://viem.sh/docs/actions/public/getFilterChanges).
+*
+* - Docs: https://viem.sh/docs/actions/public/createBlockFilter
+* - JSON-RPC Methods: [`eth_newBlockFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newBlockFilter)
+*
+* @param client - Client to use
+* @returns [`Filter`](https://viem.sh/docs/glossary/types#filter). {@link CreateBlockFilterReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { createBlockFilter } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const filter = await createBlockFilter(client)
+* // { id: "0x345a6572337856574a76364e457a4366", type: 'block' }
+*/
+async function createBlockFilter(client) {
+	const getRequest = createFilterRequestScope(client, { method: "eth_newBlockFilter" });
+	const id = await client.request({ method: "eth_newBlockFilter" });
+	return {
+		id,
+		request: getRequest(id),
+		type: "block"
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/createEventFilter.js
+init_toHex();
+/**
+* Creates a [`Filter`](https://viem.sh/docs/glossary/types#filter) to listen for new events that can be used with [`getFilterChanges`](https://viem.sh/docs/actions/public/getFilterChanges).
+*
+* - Docs: https://viem.sh/docs/actions/public/createEventFilter
+* - JSON-RPC Methods: [`eth_newFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newfilter)
+*
+* @param client - Client to use
+* @param parameters - {@link CreateEventFilterParameters}
+* @returns [`Filter`](https://viem.sh/docs/glossary/types#filter). {@link CreateEventFilterReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { createEventFilter } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const filter = await createEventFilter(client, {
+*   address: '0xfba3912ca04dd458c843e2ee08967fc04f3579c2',
+* })
+*/
+async function createEventFilter(client, { address, args, event, events: events_, fromBlock, strict, toBlock } = {}) {
+	const events = events_ ?? (event ? [event] : void 0);
+	const getRequest = createFilterRequestScope(client, { method: "eth_newFilter" });
+	let topics = [];
+	if (events) {
+		topics = [events.flatMap((event) => encodeEventTopics({
+			abi: [event],
+			eventName: event.name,
+			args
+		}))];
+		if (event) topics = topics[0];
+	}
+	const id = await client.request({
+		method: "eth_newFilter",
+		params: [{
+			address,
+			fromBlock: typeof fromBlock === "bigint" ? numberToHex(fromBlock) : fromBlock,
+			toBlock: typeof toBlock === "bigint" ? numberToHex(toBlock) : toBlock,
+			...topics.length ? { topics } : {}
+		}]
+	});
+	return {
+		abi: events,
+		args,
+		eventName: event ? event.name : void 0,
+		fromBlock,
+		id,
+		request: getRequest(id),
+		strict: Boolean(strict),
+		toBlock,
+		type: "event"
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/createPendingTransactionFilter.js
+/**
+* Creates a Filter to listen for new pending transaction hashes that can be used with [`getFilterChanges`](https://viem.sh/docs/actions/public/getFilterChanges).
+*
+* - Docs: https://viem.sh/docs/actions/public/createPendingTransactionFilter
+* - JSON-RPC Methods: [`eth_newPendingTransactionFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newpendingtransactionfilter)
+*
+* @param client - Client to use
+* @returns [`Filter`](https://viem.sh/docs/glossary/types#filter). {@link CreateBlockFilterReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { createPendingTransactionFilter } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const filter = await createPendingTransactionFilter(client)
+* // { id: "0x345a6572337856574a76364e457a4366", type: 'transaction' }
+*/
+async function createPendingTransactionFilter(client) {
+	const getRequest = createFilterRequestScope(client, { method: "eth_newPendingTransactionFilter" });
+	const id = await client.request({ method: "eth_newPendingTransactionFilter" });
+	return {
+		id,
+		request: getRequest(id),
+		type: "transaction"
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getBalance.js
+init_abis();
+init_decodeFunctionResult();
+init_encodeFunctionData();
+init_formatBlockParameter();
+init_call();
+/**
+* Returns the balance of an address in wei.
+*
+* - Docs: https://viem.sh/docs/actions/public/getBalance
+* - JSON-RPC Methods: [`eth_getBalance`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getbalance)
+*
+* You can convert the balance to ether units with [`formatEther`](https://viem.sh/docs/utilities/formatEther).
+*
+* ```ts
+* const balance = await getBalance(client, {
+*   address: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e',
+*   blockTag: 'safe'
+* })
+* const balanceAsEther = formatEther(balance)
+* // "6.942"
+* ```
+*
+* @param client - Client to use
+* @param parameters - {@link GetBalanceParameters}
+* @returns The balance of the address in wei. {@link GetBalanceReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getBalance } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const balance = await getBalance(client, {
+*   address: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e',
+* })
+* // 10000000000000000000000n (wei)
+*/
+async function getBalance$1(client, { address, blockHash, blockNumber, blockTag = client.experimental_blockTag ?? "latest", requireCanonical }) {
+	const block = formatBlockParameter({
+		blockHash,
+		blockNumber,
+		blockTag,
+		requireCanonical
+	});
+	if (client.batch?.multicall && client.chain?.contracts?.multicall3) {
+		const multicall3Address = client.chain.contracts.multicall3.address;
+		const calldata = encodeFunctionData({
+			abi: multicall3Abi,
+			functionName: "getEthBalance",
+			args: [address]
+		});
+		const { data } = await getAction(client, call, "call")({
+			to: multicall3Address,
+			data: calldata,
+			blockHash,
+			blockNumber,
+			blockTag,
+			requireCanonical
+		});
+		return decodeFunctionResult({
+			abi: multicall3Abi,
+			functionName: "getEthBalance",
+			args: [address],
+			data: data || "0x"
+		});
+	}
+	const balance = await client.request({
+		method: "eth_getBalance",
+		params: [address, block]
+	});
+	return BigInt(balance);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getBlobBaseFee.js
+/**
+* Returns the base fee per blob gas in wei.
+*
+* - Docs: https://viem.sh/docs/actions/public/getBlobBaseFee
+* - JSON-RPC Methods: [`eth_blobBaseFee`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_blobBaseFee)
+*
+* @param client - Client to use
+* @returns The blob base fee (in wei). {@link GetBlobBaseFeeReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getBlobBaseFee } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const blobBaseFee = await getBlobBaseFee(client)
+*/
+async function getBlobBaseFee(client) {
+	const baseFee = await client.request({ method: "eth_blobBaseFee" });
+	return BigInt(baseFee);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getBlockReceipts.js
+init_toHex();
+/**
+* Returns the transaction receipts of a block at a block number, hash, or tag.
+*
+* - Docs: https://viem.sh/docs/actions/public/getBlockReceipts
+* - JSON-RPC Methods: [`eth_getBlockReceipts`](https://ethereum.github.io/execution-apis/api/methods/eth_getBlockReceipts/)
+*
+* @param client - Client to use
+* @param parameters - {@link GetBlockReceiptsParameters}
+* @returns The transaction receipts. {@link GetBlockReceiptsReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getBlockReceipts } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const receipts = await getBlockReceipts(client, {
+*   blockNumber: 69420n,
+* })
+*/
+async function getBlockReceipts(client, { blockHash, blockNumber, blockTag = client.experimental_blockTag ?? "latest" } = {}) {
+	const blockNumberHex = blockNumber !== void 0 ? numberToHex(blockNumber) : void 0;
+	const receipts = await client.request({
+		method: "eth_getBlockReceipts",
+		params: [blockHash || blockNumberHex || blockTag]
+	}, { dedupe: Boolean(blockHash || blockNumberHex) });
+	if (!receipts) throw new BlockNotFoundError({
+		blockHash,
+		blockNumber
+	});
+	const format = client.chain?.formatters?.transactionReceipt?.format || formatTransactionReceipt;
+	return receipts.map((receipt) => format(receipt, "getBlockReceipts"));
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getBlockTransactionCount.js
+init_fromHex();
+init_toHex();
+/**
+* Returns the number of Transactions at a block number, hash, or tag.
+*
+* - Docs: https://viem.sh/docs/actions/public/getBlockTransactionCount
+* - JSON-RPC Methods:
+*   - Calls [`eth_getBlockTransactionCountByNumber`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getblocktransactioncountbynumber) for `blockNumber` & `blockTag`.
+*   - Calls [`eth_getBlockTransactionCountByHash`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getblocktransactioncountbyhash) for `blockHash`.
+*
+* @param client - Client to use
+* @param parameters - {@link GetBlockTransactionCountParameters}
+* @returns The block transaction count. {@link GetBlockTransactionCountReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getBlockTransactionCount } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const count = await getBlockTransactionCount(client)
+*/
+async function getBlockTransactionCount(client, { blockHash, blockNumber, blockTag = "latest" } = {}) {
+	const blockNumberHex = blockNumber !== void 0 ? numberToHex(blockNumber) : void 0;
+	let count;
+	if (blockHash) count = await client.request({
+		method: "eth_getBlockTransactionCountByHash",
+		params: [blockHash]
+	}, { dedupe: true });
+	else count = await client.request({
+		method: "eth_getBlockTransactionCountByNumber",
+		params: [blockNumberHex || blockTag]
+	}, { dedupe: Boolean(blockNumberHex) });
+	return hexToNumber$1(count);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getDelegation.js
+init_getAddress();
+init_size();
+init_slice();
+/**
+* Returns the address that an account has delegated to via EIP-7702.
+*
+* - Docs: https://viem.sh/docs/actions/public/getDelegation
+*
+* @param client - Client to use
+* @param parameters - {@link GetDelegationParameters}
+* @returns The delegated address, or undefined if not delegated. {@link GetDelegationReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getDelegation } from 'viem/actions'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const delegation = await getDelegation(client, {
+*   address: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e',
+* })
+*/
+async function getDelegation(client, { address, blockNumber, blockTag = "latest" }) {
+	const code = await getCode(client, {
+		address,
+		...blockNumber !== void 0 ? { blockNumber } : { blockTag }
+	});
+	if (!code) return void 0;
+	if (size$3(code) !== 23) return void 0;
+	if (!code.startsWith("0xef0100")) return void 0;
+	return getAddress(slice$2(code, 3, 23));
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/errors/eip712.js
+init_base();
+var Eip712DomainNotFoundError = class extends BaseError$2 {
+	constructor({ address }) {
+		super(`No EIP-712 domain found on contract "${address}".`, {
+			metaMessages: [
+				"Ensure that:",
+				`- The contract is deployed at the address "${address}".`,
+				"- `eip712Domain()` function exists on the contract.",
+				"- `eip712Domain()` function matches signature to ERC-5267 specification."
+			],
+			name: "Eip712DomainNotFoundError"
+		});
+	}
+};
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getEip712Domain.js
+/**
+* Reads the EIP-712 domain from a contract, based on the ERC-5267 specification.
+*
+* @param client - A {@link Client} instance.
+* @param parameters - The parameters of the action. {@link GetEip712DomainParameters}
+* @returns The EIP-712 domain, fields, and extensions. {@link GetEip712DomainReturnType}
+*
+* @example
+* ```ts
+* import { createPublicClient, http, getEip712Domain } from 'viem'
+* import { mainnet } from 'viem/chains'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+*
+* const domain = await getEip712Domain(client, {
+*   address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+* })
+* // {
+* //   domain: {
+* //     name: 'ExampleContract',
+* //     version: '1',
+* //     chainId: 1,
+* //     verifyingContract: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+* //   },
+* //   fields: '0x0f',
+* //   extensions: [],
+* // }
+* ```
+*/
+async function getEip712Domain(client, parameters) {
+	const { address, factory, factoryData } = parameters;
+	try {
+		const [fields, name, version, chainId, verifyingContract, salt, extensions] = await getAction(client, readContract, "readContract")({
+			abi,
+			address,
+			functionName: "eip712Domain",
+			factory,
+			factoryData
+		});
+		return {
+			domain: {
+				name,
+				version,
+				chainId: Number(chainId),
+				verifyingContract,
+				salt
+			},
+			extensions,
+			fields
+		};
+	} catch (e) {
+		const error = e;
+		if (error.name === "ContractFunctionExecutionError" && error.cause.name === "ContractFunctionZeroDataError") throw new Eip712DomainNotFoundError({ address });
+		throw error;
+	}
+}
+const abi = [{
+	inputs: [],
+	name: "eip712Domain",
+	outputs: [
+		{
+			name: "fields",
+			type: "bytes1"
+		},
+		{
+			name: "name",
+			type: "string"
+		},
+		{
+			name: "version",
+			type: "string"
+		},
+		{
+			name: "chainId",
+			type: "uint256"
+		},
+		{
+			name: "verifyingContract",
+			type: "address"
+		},
+		{
+			name: "salt",
+			type: "bytes32"
+		},
+		{
+			name: "extensions",
+			type: "uint256[]"
+		}
+	],
+	stateMutability: "view",
+	type: "function"
+}];
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/formatters/feeHistory.js
+function formatFeeHistory(feeHistory) {
+	return {
+		baseFeePerGas: feeHistory.baseFeePerGas.map((value) => BigInt(value)),
+		gasUsedRatio: feeHistory.gasUsedRatio,
+		oldestBlock: BigInt(feeHistory.oldestBlock),
+		reward: feeHistory.reward?.map((reward) => reward.map((value) => BigInt(value)))
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getFeeHistory.js
+init_toHex();
+/**
+* Returns a collection of historical gas information.
+*
+* - Docs: https://viem.sh/docs/actions/public/getFeeHistory
+* - JSON-RPC Methods: [`eth_feeHistory`](https://docs.alchemy.com/reference/eth-feehistory)
+*
+* @param client - Client to use
+* @param parameters - {@link GetFeeHistoryParameters}
+* @returns The gas estimate (in wei). {@link GetFeeHistoryReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getFeeHistory } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const feeHistory = await getFeeHistory(client, {
+*   blockCount: 4,
+*   rewardPercentiles: [25, 75],
+* })
+*/
+async function getFeeHistory(client, { blockCount, blockNumber, blockTag = "latest", rewardPercentiles }) {
+	const blockNumberHex = typeof blockNumber === "bigint" ? numberToHex(blockNumber) : void 0;
+	const feeHistory = await client.request({
+		method: "eth_feeHistory",
+		params: [
+			numberToHex(blockCount),
+			blockNumberHex || blockTag,
+			rewardPercentiles
+		]
+	}, { dedupe: Boolean(blockNumberHex) });
+	return formatFeeHistory(feeHistory);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getFilterLogs.js
+/**
+* Returns a list of event logs since the filter was created.
+*
+* - Docs: https://viem.sh/docs/actions/public/getFilterLogs
+* - JSON-RPC Methods: [`eth_getFilterLogs`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterlogs)
+*
+* `getFilterLogs` is only compatible with **event filters**.
+*
+* @param client - Client to use
+* @param parameters - {@link GetFilterLogsParameters}
+* @returns A list of event logs. {@link GetFilterLogsReturnType}
+*
+* @example
+* import { createPublicClient, http, parseAbiItem } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { createEventFilter, getFilterLogs } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const filter = await createEventFilter(client, {
+*   address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+*   event: parseAbiItem('event Transfer(address indexed, address indexed, uint256)'),
+* })
+* const logs = await getFilterLogs(client, { filter })
+*/
+async function getFilterLogs(_client, { filter }) {
+	const strict = filter.strict ?? false;
+	const formattedLogs = (await filter.request({
+		method: "eth_getFilterLogs",
+		params: [filter.id]
+	})).map((log) => formatLog(log));
+	if (!filter.abi) return formattedLogs;
+	return parseEventLogs({
+		abi: filter.abi,
+		logs: formattedLogs,
+		strict
+	});
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/formatters/proof.js
+init_fromHex();
+function formatStorageProof(storageProof) {
+	return storageProof.map((proof) => ({
+		...proof,
+		value: BigInt(proof.value)
+	}));
+}
+function formatProof(proof) {
+	return {
+		...proof,
+		balance: proof.balance ? BigInt(proof.balance) : void 0,
+		nonce: proof.nonce ? hexToNumber$1(proof.nonce) : void 0,
+		storageProof: proof.storageProof ? formatStorageProof(proof.storageProof) : void 0
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getProof.js
+init_formatBlockParameter();
+/**
+* Returns the account and storage values of the specified account including the Merkle-proof.
+*
+* - Docs: https://viem.sh/docs/actions/public/getProof
+* - JSON-RPC Methods:
+*   - Calls [`eth_getProof`](https://eips.ethereum.org/EIPS/eip-1186)
+*
+* @param client - Client to use
+* @param parameters - {@link GetProofParameters}
+* @returns Proof data. {@link GetProofReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getProof } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const block = await getProof(client, {
+*  address: '0x...',
+*  storageKeys: ['0x...'],
+* })
+*/
+async function getProof(client, { address, blockHash, blockNumber, blockTag = "latest", requireCanonical, storageKeys }) {
+	const block = formatBlockParameter({
+		blockHash,
+		blockNumber,
+		blockTag,
+		requireCanonical
+	});
+	const proof = await client.request({
+		method: "eth_getProof",
+		params: [
+			address,
+			storageKeys,
+			block
+		]
+	});
+	return formatProof(proof);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getRawTransaction.js
+init_transaction();
+/**
+* Returns the raw, serialized [Transaction](https://viem.sh/docs/glossary/terms#transaction) given a hash.
+*
+* - Docs: https://viem.sh/docs/actions/public/getRawTransaction
+* - JSON-RPC Methods: `eth_getRawTransactionByHash`
+*
+* @param client - Client to use
+* @param parameters - {@link GetRawTransactionParameters}
+* @returns The raw, serialized transaction. {@link GetRawTransactionReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getRawTransaction } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const rawTransaction = await getRawTransaction(client, {
+*   hash: '0x4ca7ee652d57678f26e887c149ab0735f41de37bcad58c9f6d3ed5824f15b74d',
+* })
+*/
+async function getRawTransaction(client, { hash }) {
+	const rawTransaction = await client.request({
+		method: "eth_getRawTransactionByHash",
+		params: [hash]
+	}, { dedupe: true });
+	if (!rawTransaction) throw new TransactionNotFoundError({ hash });
+	return rawTransaction;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getStorageAt.js
+init_formatBlockParameter();
+/**
+* Returns the value from a storage slot at a given address.
+*
+* - Docs: https://viem.sh/docs/contract/getStorageAt
+* - JSON-RPC Methods: [`eth_getStorageAt`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getstorageat)
+*
+* @param client - Client to use
+* @param parameters - {@link GetStorageAtParameters}
+* @returns The value of the storage slot. {@link GetStorageAtReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getStorageAt } from 'viem/contract'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const code = await getStorageAt(client, {
+*   address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
+*   slot: toHex(0),
+* })
+*/
+async function getStorageAt(client, { address, blockHash, blockNumber, blockTag = "latest", requireCanonical, slot }) {
+	const block = formatBlockParameter({
+		blockHash,
+		blockNumber,
+		blockTag,
+		requireCanonical
+	});
+	return await client.request({
+		method: "eth_getStorageAt",
+		params: [
+			address,
+			slot,
+			block
+		]
+	});
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getStorageValues.js
+init_formatBlockParameter();
+/**
+* Returns values from multiple storage slots for multiple adddresses at a given block.
+*
+* - Docs: https://viem.sh/docs/actions/public/getStorageValues
+* - JSON-RPC Methods: [`eth_getStorageValues`](https://github.com/ethereum/execution-apis/issues/752)
+*
+* @param client - Client to use
+* @param parameters - {@link GetStorageValuesParameters}
+* @returns The values of the requested storage slots. {@link GetStorageValuesReturnType}
+*
+* @example
+* import { createPublicClient, http, toHex } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getStorageValues } from 'viem/actions'
+*
+* const client = createPublicClient({ chain: mainnet, transport: http() })
+* const values = await getStorageValues(client, {
+*   requests: {
+*     '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2': [
+*       toHex(0, { size: 32 }),
+*       toHex(1, { size: 32 }),
+*     ],
+*   },
+* })
+*/
+async function getStorageValues(client, { blockHash, blockNumber, blockTag = "latest", requireCanonical, requests }) {
+	const block = formatBlockParameter({
+		blockHash,
+		blockNumber,
+		blockTag,
+		requireCanonical
+	});
+	return client.request({
+		method: "eth_getStorageValues",
+		params: [requests, block]
+	});
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getTransactionConfirmations.js
+/**
+* Returns the number of blocks passed (confirmations) since the transaction was processed on a block.
+*
+* - Docs: https://viem.sh/docs/actions/public/getTransactionConfirmations
+* - Example: https://stackblitz.com/github/wevm/viem/tree/main/examples/transactions_fetching-transactions
+* - JSON-RPC Methods: [`eth_getTransactionConfirmations`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getTransactionConfirmations)
+*
+* @param client - Client to use
+* @param parameters - {@link GetTransactionConfirmationsParameters}
+* @returns The number of blocks passed since the transaction was processed. If confirmations is 0, then the Transaction has not been confirmed & processed yet. {@link GetTransactionConfirmationsReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { getTransactionConfirmations } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const confirmations = await getTransactionConfirmations(client, {
+*   hash: '0x4ca7ee652d57678f26e887c149ab0735f41de37bcad58c9f6d3ed5824f15b74d',
+* })
+*/
+async function getTransactionConfirmations(client, { hash, transactionReceipt }) {
+	const [blockNumber, transaction] = await Promise.all([getAction(client, getBlockNumber, "getBlockNumber")({}), hash ? getAction(client, getTransaction, "getTransaction")({ hash }) : void 0]);
+	const transactionBlockNumber = transactionReceipt?.blockNumber || transaction?.blockNumber;
+	if (!transactionBlockNumber) return 0n;
+	return blockNumber - transactionBlockNumber + 1n;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/multicall.js
+init_abis();
+init_contracts();
+init_abi();
+init_base();
+init_contract$1();
+init_decodeFunctionResult();
+init_encodeFunctionData();
+init_getChainContractAddress();
+init_createBatchScheduler();
+init_stringify();
+/**
+* Similar to [`readContract`](https://viem.sh/docs/contract/readContract), but batches up multiple functions on a contract in a single RPC call via the [`multicall3` contract](https://github.com/mds1/multicall).
+*
+* - Docs: https://viem.sh/docs/contract/multicall
+*
+* @param client - Client to use
+* @param parameters - {@link MulticallParameters}
+* @returns An array of results with accompanying status. {@link MulticallReturnType}
+*
+* @example
+* import { createPublicClient, http, parseAbi } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { multicall } from 'viem/contract'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const abi = parseAbi([
+*   'function balanceOf(address) view returns (uint256)',
+*   'function totalSupply() view returns (uint256)',
+* ])
+* const results = await multicall(client, {
+*   contracts: [
+*     {
+*       address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
+*       abi,
+*       functionName: 'balanceOf',
+*       args: ['0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'],
+*     },
+*     {
+*       address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
+*       abi,
+*       functionName: 'totalSupply',
+*     },
+*   ],
+* })
+* // [{ result: 424122n, status: 'success' }, { result: 1000000n, status: 'success' }]
+*/
+async function multicall(client, parameters) {
+	const { account, authorizationList, allowFailure = true, blockHash, blockNumber, blockOverrides, blockTag, requireCanonical, stateOverride } = parameters;
+	const contracts = parameters.contracts;
+	const batch = typeof client.batch?.multicall === "object" ? client.batch.multicall : {};
+	const batchSize = parameters.batchSize ?? batch.batchSize ?? 1024;
+	const deployless = parameters.deployless ?? batch.deployless ?? false;
+	const multicallAddress = (() => {
+		if (parameters.multicallAddress) return parameters.multicallAddress;
+		if (deployless) return null;
+		if (client.chain) return getChainContractAddress({
+			blockNumber,
+			chain: client.chain,
+			contract: "multicall3"
+		});
+		throw new Error("client chain not configured. multicallAddress is required.");
+	})();
+	const chunkedCalls = [[]];
+	let currentChunk = 0;
+	let currentChunkSize = 0;
+	for (let i = 0; i < contracts.length; i++) {
+		const { abi, address, args, functionName } = contracts[i];
+		try {
+			const callData = encodeFunctionData({
+				abi,
+				args,
+				functionName
+			});
+			currentChunkSize += (callData.length - 2) / 2;
+			if (batchSize > 0 && currentChunkSize > batchSize && chunkedCalls[currentChunk].length > 0) {
+				currentChunk++;
+				currentChunkSize = (callData.length - 2) / 2;
+				chunkedCalls[currentChunk] = [];
+			}
+			chunkedCalls[currentChunk] = [...chunkedCalls[currentChunk], {
+				allowFailure: true,
+				callData,
+				target: address
+			}];
+		} catch (err) {
+			const error = getContractError(err, {
+				abi,
+				address,
+				args,
+				docsPath: "/docs/contract/multicall",
+				functionName,
+				sender: account
+			});
+			if (!allowFailure) throw error;
+			chunkedCalls[currentChunk] = [...chunkedCalls[currentChunk], {
+				allowFailure: true,
+				callData: "0x",
+				target: address
+			}];
+		}
+	}
+	const batching = Boolean(client.batch?.multicall);
+	const batches = batching ? chunkedCalls.flatMap((calls) => calls.map((call) => [call])) : chunkedCalls;
+	const aggregate3Results = await Promise.allSettled(batches.map((calls) => {
+		if (batching) return scheduleMulticall(client, {
+			account,
+			authorizationList,
+			batchSize,
+			blockHash,
+			blockNumber,
+			blockOverrides,
+			blockTag,
+			call: calls[0],
+			multicallAddress,
+			requireCanonical,
+			stateOverride
+		}).then((result) => [result]);
+		return getAction(client, readContract, "readContract")({
+			...multicallAddress === null ? { code: multicall3Bytecode } : { address: multicallAddress },
+			abi: multicall3Abi,
+			account,
+			args: [calls],
+			authorizationList,
+			blockHash,
+			blockNumber,
+			blockOverrides,
+			blockTag,
+			functionName: "aggregate3",
+			requireCanonical,
+			stateOverride
+		});
+	}));
+	const results = [];
+	for (let i = 0; i < aggregate3Results.length; i++) {
+		const result = aggregate3Results[i];
+		if (result.status === "rejected") {
+			if (!allowFailure) throw result.reason;
+			for (let j = 0; j < batches[i].length; j++) results.push({
+				status: "failure",
+				error: result.reason,
+				result: void 0
+			});
+			continue;
+		}
+		const aggregate3Result = result.value;
+		for (let j = 0; j < aggregate3Result.length; j++) {
+			const { returnData, success } = aggregate3Result[j];
+			const { callData } = batches[i][j];
+			const { abi, address, functionName, args } = contracts[results.length];
+			try {
+				if (callData === "0x") throw new AbiDecodingZeroDataError();
+				if (!success) throw new RawContractError({ data: returnData });
+				const result = decodeFunctionResult({
+					abi,
+					args,
+					data: returnData,
+					functionName
+				});
+				results.push(allowFailure ? {
+					result,
+					status: "success"
+				} : result);
+			} catch (err) {
+				const error = getContractError(err, {
+					abi,
+					address,
+					args,
+					docsPath: "/docs/contract/multicall",
+					functionName
+				});
+				if (!allowFailure) throw error;
+				results.push({
+					error,
+					result: void 0,
+					status: "failure"
+				});
+			}
+		}
+	}
+	if (results.length !== contracts.length) throw new BaseError$2("multicall results mismatch");
+	return results;
+}
+async function scheduleMulticall(client, parameters) {
+	const { batchSize, call, multicallAddress, ...rest } = parameters;
+	const { wait = 0 } = typeof client.batch?.multicall === "object" ? client.batch.multicall : {};
+	const { schedule } = createBatchScheduler({
+		id: stringify$1([
+			"multicall",
+			client.uid,
+			batchSize,
+			multicallAddress,
+			rest
+		]),
+		wait,
+		shouldSplitBatch(calls) {
+			if (batchSize === 0) return false;
+			return calls.reduce((size, { callData }) => size + (callData.length - 2) / 2, 0) > batchSize;
+		},
+		fn: (calls) => getAction(client, readContract, "readContract")({
+			...multicallAddress === null ? { code: multicall3Bytecode } : { address: multicallAddress },
+			...rest,
+			abi: multicall3Abi,
+			args: [calls],
+			functionName: "aggregate3"
+		})
+	});
+	const [result] = await schedule(call);
+	return result;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/simulateBlocks.js
+init_BlockOverrides();
+init_parseAccount();
+init_abi();
+init_contract$1();
+init_node();
+init_decodeFunctionResult();
+init_encodeFunctionData();
+init_concat();
+init_toHex();
+init_getNodeError();
+init_transactionRequest();
+init_stateOverride();
+init_assertRequest();
+/**
+* Simulates a set of calls on block(s) with optional block and state overrides.
+*
+* @example
+* ```ts
+* import { createClient, http, parseEther } from 'viem'
+* import { simulate } from 'viem/actions'
+* import { mainnet } from 'viem/chains'
+*
+* const client = createClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+*
+* const result = await simulate(client, {
+*   blocks: [{
+*     blockOverrides: {
+*       number: 69420n,
+*     },
+*     calls: [{
+*       {
+*         account: '0x5a0b54d5dc17e482fe8b0bdca5320161b95fb929',
+*         data: '0xdeadbeef',
+*         to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+*       },
+*       {
+*         account: '0x5a0b54d5dc17e482fe8b0bdca5320161b95fb929',
+*         to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+*         value: parseEther('1'),
+*       },
+*     }],
+*     stateOverrides: [{
+*       address: '0x5a0b54d5dc17e482fe8b0bdca5320161b95fb929',
+*       balance: parseEther('10'),
+*     }],
+*   }]
+* })
+* ```
+*
+* @param client - Client to use.
+* @param parameters - {@link SimulateBlocksParameters}
+* @returns Simulated blocks. {@link SimulateBlocksReturnType}
+*/
+async function simulateBlocks(client, parameters) {
+	const { blockNumber, blockTag = client.experimental_blockTag ?? "latest", blocks, returnFullTransactions, traceTransfers, validation } = parameters;
+	try {
+		const blockStateCalls = [];
+		for (const block of blocks) {
+			const blockOverrides = block.blockOverrides ? toRpc(block.blockOverrides) : void 0;
+			const calls = block.calls.map((call_) => {
+				const call = call_;
+				const account = call.account ? parseAccount(call.account) : void 0;
+				const data = call.abi ? encodeFunctionData(call) : call.data;
+				const request = {
+					...call,
+					account,
+					data: call.dataSuffix ? concat$1([data || "0x", call.dataSuffix]) : data,
+					from: call.from ?? account?.address
+				};
+				assertRequest(request);
+				return formatTransactionRequest(request);
+			});
+			const stateOverrides = block.stateOverrides ? serializeStateOverride(block.stateOverrides) : void 0;
+			blockStateCalls.push({
+				blockOverrides,
+				calls,
+				stateOverrides
+			});
+		}
+		const block = (typeof blockNumber === "bigint" ? numberToHex(blockNumber) : void 0) || blockTag;
+		return (await client.request({
+			method: "eth_simulateV1",
+			params: [{
+				blockStateCalls,
+				returnFullTransactions,
+				traceTransfers,
+				validation
+			}, block]
+		})).map((block, i) => ({
+			...formatBlock(block),
+			calls: block.calls.map((call, j) => {
+				const { abi, args, functionName, to } = blocks[i].calls[j];
+				const data = call.error?.data ?? call.returnData;
+				const gasUsed = BigInt(call.gasUsed);
+				const maxUsedGas = call.maxUsedGas === void 0 ? void 0 : BigInt(call.maxUsedGas);
+				const logs = call.logs?.map((log) => formatLog(log));
+				const status = call.status === "0x1" ? "success" : "failure";
+				const result = abi && status === "success" && data !== "0x" ? decodeFunctionResult({
+					abi,
+					data,
+					functionName
+				}) : null;
+				const error = (() => {
+					if (status === "success") return void 0;
+					let error;
+					if (data === "0x") error = new AbiDecodingZeroDataError();
+					else if (data) error = new RawContractError({ data });
+					if (!error) return void 0;
+					return getContractError(error, {
+						abi: abi ?? [],
+						address: to ?? "0x",
+						args,
+						functionName: functionName ?? "<unknown>"
+					});
+				})();
+				return {
+					data,
+					gasUsed,
+					logs,
+					...maxUsedGas === void 0 ? {} : { maxUsedGas },
+					status,
+					...status === "success" ? { result } : { error }
+				};
+			})
+		}));
+	} catch (e) {
+		const cause = e;
+		const error = getNodeError(cause, {});
+		if (error instanceof UnknownNodeError) throw cause;
+		throw error;
+	}
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/ox@0.14.45_typescript@5.8.3_zod@4.6.5/node_modules/ox/_esm/core/AbiConstructor.js
+init_Hex();
+function encode$1(...parameters) {
+	const [abiConstructor, options] = (() => {
+		if (Array.isArray(parameters[0])) {
+			const [abi, options] = parameters;
+			return [fromAbi$1(abi), options];
+		}
+		return parameters;
+	})();
+	const { bytecode, args } = options;
+	return concat(bytecode, abiConstructor.inputs?.length && args?.length ? encode$2(abiConstructor.inputs, args) : "0x");
+}
+/** @internal */
+function from$1(abiConstructor) {
+	return from$4(abiConstructor);
+}
+/** @internal */
+function fromAbi$1(abi) {
+	const item = abi.find((item) => item.type === "constructor");
+	if (!item) throw new NotFoundError({ name: "constructor" });
+	return item;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/ox@0.14.45_typescript@5.8.3_zod@4.6.5/node_modules/ox/_esm/core/AbiFunction.js
+init_Hex();
+function decodeResult(...parameters) {
+	const [abiFunction, data, options = {}] = (() => {
+		if (Array.isArray(parameters[0])) {
+			const [abi, name, data, options] = parameters;
+			return [
+				fromAbi(abi, name),
+				data,
+				options
+			];
+		}
+		return parameters;
+	})();
+	const values = decode$1(abiFunction.outputs, data, options);
+	if (values && Object.keys(values).length === 0) return void 0;
+	if (values && Object.keys(values).length === 1) {
+		if (Array.isArray(values)) return values[0];
+		return Object.values(values)[0];
+	}
+	return values;
+}
+function encodeData(...parameters) {
+	const [abiFunction, args = []] = (() => {
+		if (Array.isArray(parameters[0])) {
+			const [abi, name, args] = parameters;
+			return [fromAbi(abi, name, { args }), args];
+		}
+		const [abiFunction, args] = parameters;
+		return [abiFunction, args];
+	})();
+	const { overloads } = abiFunction;
+	const item = overloads ? fromAbi([abiFunction, ...overloads], abiFunction.name, { args }) : abiFunction;
+	const selector = getSelector(item);
+	const data = args.length > 0 ? encode$2(item.inputs, args) : void 0;
+	return data ? concat(selector, data) : selector;
+}
+/**
+* Parses an arbitrary **JSON ABI Function** or **Human Readable ABI Function** into a typed {@link ox#AbiFunction.AbiFunction}.
+*
+* @example
+* ### JSON ABIs
+*
+* ```ts twoslash
+* import { AbiFunction } from 'ox'
+*
+* const approve = AbiFunction.from({
+*   type: 'function',
+*   name: 'approve',
+*   stateMutability: 'nonpayable',
+*   inputs: [
+*     {
+*       name: 'spender',
+*       type: 'address',
+*     },
+*     {
+*       name: 'amount',
+*       type: 'uint256',
+*     },
+*   ],
+*   outputs: [{ type: 'bool' }],
+* })
+*
+* approve
+* //^?
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+* ```
+*
+* @example
+* ### Human Readable ABIs
+*
+* A Human Readable ABI can be parsed into a typed ABI object:
+*
+* ```ts twoslash
+* import { AbiFunction } from 'ox'
+*
+* const approve = AbiFunction.from(
+*   'function approve(address spender, uint256 amount) returns (bool)' // [!code hl]
+* )
+*
+* approve
+* //^?
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+* ```
+*
+* @example
+* It is possible to specify `struct`s along with your definitions:
+*
+* ```ts twoslash
+* import { AbiFunction } from 'ox'
+*
+* const approve = AbiFunction.from([
+*   'struct Foo { address spender; uint256 amount; }', // [!code hl]
+*   'function approve(Foo foo) returns (bool)',
+* ])
+*
+* approve
+* //^?
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+* ```
+*
+*
+*
+* @param abiFunction - The ABI Function to parse.
+* @returns Typed ABI Function.
+*/
+function from(abiFunction, options = {}) {
+	return from$4(abiFunction, options);
+}
+/**
+* Extracts an {@link ox#AbiFunction.AbiFunction} from an {@link ox#Abi.Abi} given a name and optional arguments.
+*
+* @example
+* ### Extracting by Name
+*
+* ABI Functions can be extracted by their name using the `name` option:
+*
+* ```ts twoslash
+* import { Abi, AbiFunction } from 'ox'
+*
+* const abi = Abi.from([
+*   'function foo()',
+*   'event Transfer(address owner, address to, uint256 tokenId)',
+*   'function bar(string a) returns (uint256 x)',
+* ])
+*
+* const item = AbiFunction.fromAbi(abi, 'foo') // [!code focus]
+* //    ^?
+*
+*
+*
+*
+*
+*
+* ```
+*
+* @example
+* ### Extracting by Selector
+*
+* ABI Functions can be extract by their selector when {@link ox#Hex.Hex} is provided to `name`.
+*
+* ```ts twoslash
+* import { Abi, AbiFunction } from 'ox'
+*
+* const abi = Abi.from([
+*   'function foo()',
+*   'event Transfer(address owner, address to, uint256 tokenId)',
+*   'function bar(string a) returns (uint256 x)',
+* ])
+* const item = AbiFunction.fromAbi(abi, '0x095ea7b3') // [!code focus]
+* //    ^?
+*
+*
+*
+*
+*
+*
+*
+*
+*
+* ```
+*
+* :::note
+*
+* Extracting via a hex selector is useful when extracting an ABI Function from an `eth_call` RPC response or
+* from a Transaction `input`.
+*
+* :::
+*
+* @param abi - The ABI to extract from.
+* @param name - The name (or selector) of the ABI item to extract.
+* @param options - Extraction options.
+* @returns The ABI item.
+*/
+function fromAbi(abi, name, options) {
+	const item = fromAbi$2(abi, name, options);
+	if (item.type !== "function") throw new NotFoundError({
+		name,
+		type: "function"
+	});
+	return item;
+}
+/**
+* Computes the [4-byte selector](https://solidity-by-example.org/function-selector/) for an {@link ox#AbiFunction.AbiFunction}.
+*
+* Useful for computing function selectors for calldata.
+*
+* @example
+* ```ts twoslash
+* import { AbiFunction } from 'ox'
+*
+* const selector = AbiFunction.getSelector('function ownerOf(uint256 tokenId)')
+* // @log: '0x6352211e'
+* ```
+*
+* @example
+* ```ts twoslash
+* import { AbiFunction } from 'ox'
+*
+* const selector = AbiFunction.getSelector({
+*   inputs: [{ type: 'uint256' }],
+*   name: 'ownerOf',
+*   outputs: [],
+*   stateMutability: 'view',
+*   type: 'function'
+* })
+* // @log: '0x6352211e'
+* ```
+*
+* @param abiItem - The ABI item to compute the selector for.
+* @returns The first 4 bytes of the {@link ox#Hash.(keccak256:function)} hash of the function signature.
+*/
+function getSelector(abiItem) {
+	return getSelector$2(abiItem);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/constants/address.js
+const ethAddress = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const zeroAddress = "0x0000000000000000000000000000000000000000";
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/simulateCalls.js
+init_parseAccount();
+init_contracts();
+init_base();
+init_contract$1();
+init_node();
+init_pad();
+init_fromHex();
+init_call();
+const getBalanceCode = "0x6080604052348015600e575f80fd5b5061016d8061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c8063f8b2cb4f1461002d575b5f80fd5b610047600480360381019061004291906100db565b61005d565b604051610054919061011e565b60405180910390f35b5f8173ffffffffffffffffffffffffffffffffffffffff16319050919050565b5f80fd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f6100aa82610081565b9050919050565b6100ba816100a0565b81146100c4575f80fd5b50565b5f813590506100d5816100b1565b92915050565b5f602082840312156100f0576100ef61007d565b5b5f6100fd848285016100c7565b91505092915050565b5f819050919050565b61011881610106565b82525050565b5f6020820190506101315f83018461010f565b9291505056fea26469706673582212203b9fe929fe995c7cf9887f0bdba8a36dd78e8b73f149b17d2d9ad7cd09d2dc6264736f6c634300081a0033";
+const staticCallCode = "0x608060405234801561000f575f5ffd5b5060043610610029575f3560e01c8063fd00430c1461002d575b5f5ffd5b6100476004803603810190610042919061012b565b610049565b005b80825f375f5f825f865afa610060573d5f5f3e3d5ffd5b3d5f5f3e3d5ff35b5f5ffd5b5f5ffd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f61009982610070565b9050919050565b6100a98161008f565b81146100b3575f5ffd5b50565b5f813590506100c4816100a0565b92915050565b5f5ffd5b5f5ffd5b5f5ffd5b5f5f83601f8401126100eb576100ea6100ca565b5b8235905067ffffffffffffffff811115610108576101076100ce565b5b602083019150836001820283011115610124576101236100d2565b5b9250929050565b5f5f5f6040848603121561014257610141610068565b5b5f61014f868287016100b6565b935050602084013567ffffffffffffffff8111156101705761016f61006c565b5b61017c868287016100d6565b9250925050925092509256fea2646970667358221220635ed99185cacf3f2acba6921f23687c969cec2bbaf5f9ad599f507e6e105e6964736f6c63430008230033";
+const assetProbeGas = 1000000n;
+const staticCallAddressBase = 3735928559n;
+const transferEventSelector = getSelector$1(from$3("event Transfer(address indexed from, address indexed to, uint256 value)"));
+const balanceOfFunction = from("function balanceOf(address) returns (uint256)");
+const decimalsFunction = from("function decimals() returns (uint256)");
+const tokenUriFunction = from("function tokenURI(uint256) returns (string)");
+const symbolFunction = from("function symbol() returns (string)");
+const staticCallFunction = from("function query(address target, bytes data)");
+/**
+* Simulates execution of a batch of calls.
+*
+* @param client - Client to use
+* @param parameters - {@link SimulateCallsParameters}
+* @returns Results. {@link SimulateCallsReturnType}
+*
+* @example
+* ```ts
+* import { createPublicClient, http, parseEther } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { simulateCalls } from 'viem/actions'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+*
+* const result = await simulateCalls(client, {
+*   account: '0x5a0b54d5dc17e482fe8b0bdca5320161b95fb929',
+*   calls: [{
+*     {
+*       data: '0xdeadbeef',
+*       to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+*     },
+*     {
+*       to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+*       value: parseEther('1'),
+*     },
+*   ]
+* })
+* ```
+*/
+async function simulateCalls(client, parameters) {
+	const { blockNumber, blockTag, calls, stateOverrides, traceAssetChanges, traceTransfers, validation } = parameters;
+	const account = parameters.account ? parseAccount(parameters.account) : void 0;
+	if (traceAssetChanges && !account) throw new BaseError$2("`account` is required when `traceAssetChanges` is true");
+	const getBalanceData = account ? encode$1(from$1("constructor(bytes, bytes)"), {
+		bytecode: deploylessCallViaBytecodeBytecode,
+		args: [getBalanceCode, encodeData(from("function getBalance(address)"), [account.address])]
+	}) : void 0;
+	const blockTag_ = blockTag ?? client.experimental_blockTag ?? "latest";
+	let baseBlockNumber = blockNumber;
+	if (traceAssetChanges && typeof baseBlockNumber !== "bigint" && blockTag_ !== "earliest" && blockTag_ !== "pending") {
+		if (blockTag_ === "latest") baseBlockNumber = await getBlockNumber(client, { cacheTime: 0 });
+		else {
+			const block = await getBlock(client, { blockTag: blockTag_ });
+			if (typeof block.number !== "bigint") throw new BaseError$2(`Block tag \`${blockTag_}\` did not resolve to a number.`);
+			baseBlockNumber = block.number;
+		}
+	}
+	const block_ = typeof baseBlockNumber === "bigint" ? { blockNumber: baseBlockNumber } : { blockTag: blockTag_ };
+	const discovery = traceAssetChanges ? await simulateBlocks(client, {
+		...block_,
+		blocks: [{
+			calls: calls.map((call) => ({
+				...call,
+				from: account.address
+			})),
+			stateOverrides
+		}],
+		traceTransfers,
+		validation
+	}) : void 0;
+	const assetAddresses = discovery ? [.../* @__PURE__ */ new Set([...tokensFromLogs(discovery[0].calls.flatMap((call) => call.logs ?? []), account.address), ...parameters.calls.map((call) => call.to?.toLowerCase())])].filter((address) => Boolean(address) && address !== "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" && address !== "0x0000000000000000000000000000000000000000") : [];
+	const staticCallAddress = getStaticCallAddress([
+		...account ? [account.address] : [],
+		...assetAddresses,
+		...stateOverrides?.map(({ address }) => address) ?? []
+	]);
+	const staticCallStateOverrides = [{
+		address: staticCallAddress,
+		code: staticCallCode
+	}];
+	const [balanceCallsPre, blocks] = await Promise.all([traceAssetChanges ? Promise.all([readBalance(client, {
+		account: account.address,
+		...block_,
+		data: getBalanceData,
+		stateOverride: stateOverrides
+	}), ...assetAddresses.map((address) => readBalance(client, {
+		account: account.address,
+		address,
+		...block_,
+		data: encodeData(balanceOfFunction, [account.address]),
+		staticCallAddress,
+		stateOverride: stateOverrides
+	}))]) : [], simulateBlocks(client, {
+		...block_,
+		blocks: [{
+			calls: [...calls, { to: zeroAddress }].map((call) => ({
+				...call,
+				from: account?.address
+			})),
+			stateOverrides
+		}, ...traceAssetChanges ? [
+			{ calls: [{ data: getBalanceData }] },
+			{
+				calls: assetAddresses.map((address) => ({
+					to: staticCallAddress,
+					gas: assetProbeGas,
+					data: encodeStaticCall(address, encodeData(balanceOfFunction, [account.address]))
+				})),
+				stateOverrides: staticCallStateOverrides
+			},
+			{
+				calls: assetAddresses.map((address) => ({
+					to: staticCallAddress,
+					gas: assetProbeGas,
+					data: encodeStaticCall(address, encodeData(decimalsFunction))
+				})),
+				stateOverrides: staticCallStateOverrides
+			},
+			{
+				calls: assetAddresses.map((address) => ({
+					to: staticCallAddress,
+					gas: assetProbeGas,
+					data: encodeStaticCall(address, encodeData(tokenUriFunction, [0n]))
+				})),
+				stateOverrides: staticCallStateOverrides
+			},
+			{
+				calls: assetAddresses.map((address) => ({
+					to: staticCallAddress,
+					gas: assetProbeGas,
+					data: encodeStaticCall(address, encodeData(symbolFunction))
+				})),
+				stateOverrides: staticCallStateOverrides
+			}
+		] : []],
+		traceTransfers,
+		validation
+	})]);
+	const block_results = blocks[0];
+	const [block_ethPost, block_assetsPost, block_decimals, block_tokenURI, block_symbols] = traceAssetChanges ? blocks.slice(1) : [];
+	const { calls: block_calls, ...block } = block_results;
+	const results = block_calls.slice(0, -1);
+	const balancesPre = balanceCallsPre.map((call) => isBalance(call) ? hexToBigInt(call.data) : null);
+	const ethPost = block_ethPost?.calls ?? [];
+	const assetsPost = block_assetsPost?.calls ?? [];
+	const balancesPost = [...ethPost, ...assetsPost].map((call) => isBalance(call) ? hexToBigInt(call.data) : null);
+	const decimals = (block_decimals?.calls ?? []).map((call) => decodeAssetResult(call, decimalsFunction));
+	const symbols = (block_symbols?.calls ?? []).map((call) => decodeAssetResult(call, symbolFunction));
+	const tokenURI = (block_tokenURI?.calls ?? []).map((call) => decodeAssetResult(call, tokenUriFunction));
+	const changes = [];
+	for (const [i, balancePost] of balancesPost.entries()) {
+		const balancePre_ = balancesPre[i];
+		const preCall = balanceCallsPre[i];
+		const balancePre = typeof balancePre_ === "bigint" ? balancePre_ : i > 0 && preCall?.status === "success" && preCall.data === "0x" ? 0n : null;
+		if (typeof balancePost !== "bigint") continue;
+		if (typeof balancePre !== "bigint") continue;
+		const decimals_ = decimals[i - 1];
+		const symbol_ = symbols[i - 1];
+		const tokenURI_ = tokenURI[i - 1];
+		const token = (() => {
+			if (i === 0) return {
+				address: ethAddress,
+				decimals: 18,
+				symbol: "ETH"
+			};
+			return {
+				address: assetAddresses[i - 1],
+				decimals: tokenURI_ || decimals_ ? Number(decimals_ ?? 1) : void 0,
+				symbol: symbol_ ?? void 0
+			};
+		})();
+		changes.push({
+			token,
+			value: {
+				pre: balancePre,
+				post: balancePost,
+				diff: balancePost - balancePre
+			}
+		});
+	}
+	return {
+		assetChanges: changes,
+		block,
+		results
+	};
+}
+function encodeStaticCall(address, data) {
+	return encodeData(staticCallFunction, [address, data]);
+}
+function tokensFromLogs(logs, account) {
+	const account_ = pad$2(account.toLowerCase(), { size: 32 });
+	return logs.filter((log) => {
+		if (log.topics[0]?.toLowerCase() !== transferEventSelector) return false;
+		if (log.address.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") return false;
+		return log.topics[1]?.toLowerCase() === account_ || log.topics[2]?.toLowerCase() === account_;
+	}).map((log) => log.address.toLowerCase());
+}
+function isBalance(call) {
+	return call.status === "success" && /^0x[\da-f]{64}$/i.test(call.data);
+}
+function decodeAssetResult(call, abiFunction) {
+	if (call.status === "failure" || call.data === "0x") return null;
+	try {
+		return decodeResult(abiFunction, call.data);
+	} catch {
+		return null;
+	}
+}
+async function readBalance(client, parameters) {
+	const { account, address, blockNumber, blockTag, data, staticCallAddress, stateOverride } = parameters;
+	try {
+		return {
+			data: (await call({
+				...client,
+				ccipRead: false
+			}, {
+				account: address ? "0x0000000000000000000000000000000000000000" : account,
+				data: address ? encodeStaticCall(address, data) : data,
+				stateOverride: address && staticCallAddress ? [...stateOverride ?? [], {
+					address: staticCallAddress,
+					code: staticCallCode
+				}] : stateOverride,
+				...address ? {
+					gas: assetProbeGas,
+					to: staticCallAddress
+				} : {},
+				...typeof blockNumber === "bigint" ? { blockNumber } : { blockTag }
+			})).data ?? "0x",
+			status: "success"
+		};
+	} catch (error) {
+		if (!(error instanceof CallExecutionError) || !(error.cause instanceof ExecutionRevertedError)) throw error;
+		return {
+			data: "0x",
+			status: "failure"
+		};
+	}
+}
+function getStaticCallAddress(addresses) {
+	const occupied = new Set(addresses.map((address) => address.toLowerCase()));
+	let value = staticCallAddressBase;
+	while (occupied.has(`0x${value.toString(16).padStart(40, "0")}`)) value++;
+	return `0x${value.toString(16).padStart(40, "0")}`;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/verifyMessage.js
+/**
+* Verify that a message was signed by the provided address.
+*
+* Compatible with Smart Contract Accounts & Externally Owned Accounts via [ERC-6492](https://eips.ethereum.org/EIPS/eip-6492).
+*
+* - Docs {@link https://viem.sh/docs/actions/public/verifyMessage}
+*
+* @param client - Client to use.
+* @param parameters - {@link VerifyMessageParameters}
+* @returns Whether or not the signature is valid. {@link VerifyMessageReturnType}
+*/
+async function verifyMessage(client, { address, message, factory, factoryData, signature, ...callRequest }) {
+	const hash = hashMessage(message);
+	return getAction(client, verifyHash, "verifyHash")({
+		address,
+		factory,
+		factoryData,
+		hash,
+		signature,
+		...callRequest
+	});
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/verifyTypedData.js
+/**
+* Verify that typed data was signed by the provided address.
+*
+* - Docs {@link https://viem.sh/docs/actions/public/verifyTypedData}
+*
+* @param client - Client to use.
+* @param parameters - {@link VerifyTypedDataParameters}
+* @returns Whether or not the signature is valid. {@link VerifyTypedDataReturnType}
+*/
+async function verifyTypedData(client, parameters) {
+	const { address, factory, factoryData, signature, message, primaryType, types, domain, ...callRequest } = parameters;
+	const hash = hashTypedData({
+		message,
+		primaryType,
+		types,
+		domain
+	});
+	return getAction(client, verifyHash, "verifyHash")({
+		address,
+		factory,
+		factoryData,
+		hash,
+		signature,
+		...callRequest
+	});
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/watchBlockHeaders.js
+init_stringify();
+const blockFields = [
+	"size",
+	"totalDifficulty",
+	"transactions",
+	"uncles",
+	"withdrawals"
+];
+/**
+* Watches and returns incoming block headers.
+*
+* - Docs: https://viem.sh/docs/actions/public/watchBlockHeaders
+* - JSON-RPC Methods: Uses a WebSocket or IPC subscription via [`eth_subscribe`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_subscribe) and the `"newHeads"` event.
+*
+* @param client - Client to use
+* @param parameters - {@link WatchBlockHeadersParameters}
+* @returns A function that can be invoked to stop watching for new block headers. {@link WatchBlockHeadersReturnType}
+*
+* @example
+* import { createPublicClient, webSocket } from 'viem'
+* import { watchBlockHeaders } from 'viem/actions'
+* import { mainnet } from 'viem/chains'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: webSocket(),
+* })
+* const unwatch = watchBlockHeaders(client, {
+*   onBlockHeader: (blockHeader) => console.log(blockHeader),
+* })
+*/
+function watchBlockHeaders(client, { onBlockHeader, onError }) {
+	let prevBlockHeader;
+	const observerId = stringify$1(["watchBlockHeaders", client.uid]);
+	return observe(observerId, {
+		onBlockHeader,
+		onError
+	}, (emit) => {
+		let active = true;
+		let subscribed = false;
+		let unsubscribe = () => active = false;
+		(async () => {
+			try {
+				const { unsubscribe: unsubscribe_ } = await (() => {
+					if (client.transport.type === "fallback") {
+						const transport = client.transport.transports.find((transport) => transport.config.type === "webSocket" || transport.config.type === "ipc");
+						if (!transport) return client.transport;
+						return transport.value;
+					}
+					return client.transport;
+				})().subscribe({
+					params: ["newHeads"],
+					onData(data) {
+						if (!active) return;
+						const blockHeader = (client.chain?.formatters?.block?.format || formatBlock)(data.result, "watchBlockHeaders");
+						for (const field of blockFields) delete blockHeader[field];
+						emit.onBlockHeader(blockHeader, prevBlockHeader);
+						prevBlockHeader = blockHeader;
+					},
+					onError(error) {
+						if (subscribed) emit.onError?.(error);
+					}
+				});
+				subscribed = true;
+				unsubscribe = unsubscribe_;
+				if (!active) unsubscribe();
+			} catch (err) {
+				emit.onError?.(err);
+			}
+		})();
+		return () => unsubscribe();
+	});
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/watchBlocks.js
+init_stringify();
+/**
+* Watches and returns information for incoming blocks.
+*
+* - Docs: https://viem.sh/docs/actions/public/watchBlocks
+* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/blocks_watching-blocks
+* - JSON-RPC Methods:
+*   - When `poll: true`, calls [`eth_getBlockByNumber`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getBlockByNumber) on a polling interval.
+*   - When `poll: false` & WebSocket Transport, uses a WebSocket subscription via [`eth_subscribe`](https://docs.alchemy.com/reference/eth-subscribe-polygon) and the `"newHeads"` event.
+*
+* @param client - Client to use
+* @param parameters - {@link WatchBlocksParameters}
+* @returns A function that can be invoked to stop watching for new block numbers. {@link WatchBlocksReturnType}
+*
+* @example
+* import { createPublicClient, watchBlocks, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const unwatch = watchBlocks(client, {
+*   onBlock: (block) => console.log(block),
+* })
+*/
+function watchBlocks(client, { blockTag = client.experimental_blockTag ?? "latest", emitMissed = false, emitOnBegin = false, onBlock, onError, includeTransactions: includeTransactions_, poll: poll_, pollingInterval = client.pollingInterval }) {
+	const enablePolling = (() => {
+		if (typeof poll_ !== "undefined") return poll_;
+		if (client.transport.type === "webSocket" || client.transport.type === "ipc") return false;
+		if (client.transport.type === "fallback" && (client.transport.transports[0].config.type === "webSocket" || client.transport.transports[0].config.type === "ipc")) return false;
+		return true;
+	})();
+	const includeTransactions = includeTransactions_ ?? false;
+	let prevBlock;
+	const pollBlocks = () => {
+		const observerId = stringify$1([
+			"watchBlocks",
+			client.uid,
+			blockTag,
+			emitMissed,
+			emitOnBegin,
+			includeTransactions,
+			pollingInterval
+		]);
+		return observe(observerId, {
+			onBlock,
+			onError
+		}, (emit) => poll(async () => {
+			try {
+				const block = await getAction(client, getBlock, "getBlock")({
+					blockTag,
+					includeTransactions
+				});
+				if (block.number !== null && prevBlock?.number != null) {
+					if (block.number === prevBlock.number) return;
+					if (block.number - prevBlock.number > 1 && emitMissed) for (let i = prevBlock?.number + 1n; i < block.number; i++) {
+						const block = await getAction(client, getBlock, "getBlock")({
+							blockNumber: i,
+							includeTransactions
+						});
+						emit.onBlock(block, prevBlock);
+						prevBlock = block;
+					}
+				}
+				if (prevBlock?.number == null || blockTag === "pending" && block?.number == null || block.number !== null && block.number > prevBlock.number) {
+					emit.onBlock(block, prevBlock);
+					prevBlock = block;
+				}
+			} catch (err) {
+				emit.onError?.(err);
+			}
+		}, {
+			emitOnBegin,
+			interval: pollingInterval
+		}));
+	};
+	const subscribeBlocks = () => {
+		let active = true;
+		let emitFetched = true;
+		let unsubscribe = () => active = false;
+		(async () => {
+			try {
+				if (emitOnBegin) getAction(client, getBlock, "getBlock")({
+					blockTag,
+					includeTransactions
+				}).then((block) => {
+					if (!active) return;
+					if (!emitFetched) return;
+					onBlock(block, void 0);
+					emitFetched = false;
+				}).catch(onError);
+				const { unsubscribe: unsubscribe_ } = await (() => {
+					if (client.transport.type === "fallback") {
+						const transport = client.transport.transports.find((transport) => transport.config.type === "webSocket" || transport.config.type === "ipc");
+						if (!transport) return client.transport;
+						return transport.value;
+					}
+					return client.transport;
+				})().subscribe({
+					params: ["newHeads"],
+					async onData(data) {
+						if (!active) return;
+						const block = await getAction(client, getBlock, "getBlock")({
+							blockNumber: data.result?.number,
+							includeTransactions
+						}).catch(() => {});
+						if (!active) return;
+						onBlock(block, prevBlock);
+						emitFetched = false;
+						prevBlock = block;
+					},
+					onError(error) {
+						onError?.(error);
+					}
+				});
+				unsubscribe = unsubscribe_;
+				if (!active) unsubscribe();
+			} catch (err) {
+				onError?.(err);
+			}
+		})();
+		return () => unsubscribe();
+	};
+	return enablePolling ? pollBlocks() : subscribeBlocks();
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/watchEvent.js
+init_abi();
+init_rpc();
+init_stringify();
+/**
+* Watches and returns emitted [Event Logs](https://viem.sh/docs/glossary/terms#event-log).
+*
+* - Docs: https://viem.sh/docs/actions/public/watchEvent
+* - JSON-RPC Methods:
+*   - **RPC Provider supports `eth_newFilter`:**
+*     - Calls [`eth_newFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newfilter) to create a filter (called on initialize).
+*     - On a polling interval, it will call [`eth_getFilterChanges`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterchanges).
+*   - **RPC Provider does not support `eth_newFilter`:**
+*     - Calls [`eth_getLogs`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getlogs) for each block between the polling interval.
+*
+* This Action will batch up all the Event Logs found within the [`pollingInterval`](https://viem.sh/docs/actions/public/watchEvent#pollinginterval-optional), and invoke them via [`onLogs`](https://viem.sh/docs/actions/public/watchEvent#onLogs).
+*
+* `watchEvent` will attempt to create an [Event Filter](https://viem.sh/docs/actions/public/createEventFilter) and listen to changes to the Filter per polling interval, however, if the RPC Provider does not support Filters (e.g. `eth_newFilter`), then `watchEvent` will fall back to using [`getLogs`](https://viem.sh/docs/actions/public/getLogs) instead.
+*
+* @param client - Client to use
+* @param parameters - {@link WatchEventParameters}
+* @returns A function that can be invoked to stop watching for new Event Logs. {@link WatchEventReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { watchEvent } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const unwatch = watchEvent(client, {
+*   onLogs: (logs) => console.log(logs),
+* })
+*/
+function watchEvent(client, { address, args, batch = true, event, events, fromBlock, onError, onLogs, poll: poll_, pollingInterval = client.pollingInterval, strict: strict_ }) {
+	const enablePolling = (() => {
+		if (typeof poll_ !== "undefined") return poll_;
+		if (typeof fromBlock === "bigint") return true;
+		if (client.transport.type === "webSocket" || client.transport.type === "ipc") return false;
+		if (client.transport.type === "fallback" && (client.transport.transports[0].config.type === "webSocket" || client.transport.transports[0].config.type === "ipc")) return false;
+		return true;
+	})();
+	const strict = strict_ ?? false;
+	const pollEvent = () => {
+		const observerId = stringify$1([
+			"watchEvent",
+			address,
+			args,
+			batch,
+			client.uid,
+			event,
+			pollingInterval,
+			fromBlock
+		]);
+		return observe(observerId, {
+			onLogs,
+			onError
+		}, (emit) => {
+			let previousBlockNumber;
+			if (fromBlock !== void 0) previousBlockNumber = fromBlock - 1n;
+			let filter;
+			let initialized = false;
+			const unwatch = poll(async () => {
+				if (!initialized) {
+					try {
+						filter = await getAction(client, createEventFilter, "createEventFilter")({
+							address,
+							args,
+							event,
+							events,
+							strict,
+							fromBlock
+						});
+					} catch {}
+					initialized = true;
+					return;
+				}
+				try {
+					let logs;
+					if (filter) logs = await getAction(client, getFilterChanges, "getFilterChanges")({ filter });
+					else {
+						const blockNumber = await getAction(client, getBlockNumber, "getBlockNumber")({});
+						if (previousBlockNumber && previousBlockNumber !== blockNumber) logs = await getAction(client, getLogs, "getLogs")({
+							address,
+							args,
+							event,
+							events,
+							fromBlock: previousBlockNumber + 1n,
+							toBlock: blockNumber
+						});
+						else logs = [];
+						previousBlockNumber = blockNumber;
+					}
+					if (logs.length === 0) return;
+					if (batch) emit.onLogs(logs);
+					else for (const log of logs) emit.onLogs([log]);
+				} catch (err) {
+					if (filter && err instanceof InvalidInputRpcError) initialized = false;
+					emit.onError?.(err);
+				}
+			}, {
+				emitOnBegin: true,
+				interval: pollingInterval
+			});
+			return async () => {
+				if (filter) await getAction(client, uninstallFilter, "uninstallFilter")({ filter });
+				unwatch();
+			};
+		});
+	};
+	const subscribeEvent = () => {
+		let active = true;
+		let unsubscribe = () => active = false;
+		(async () => {
+			try {
+				const transport = (() => {
+					if (client.transport.type === "fallback") {
+						const transport = client.transport.transports.find((transport) => transport.config.type === "webSocket" || transport.config.type === "ipc");
+						if (!transport) return client.transport;
+						return transport.value;
+					}
+					return client.transport;
+				})();
+				const events_ = events ?? (event ? [event] : void 0);
+				let topics = [];
+				if (events_) {
+					topics = [events_.flatMap((event) => encodeEventTopics({
+						abi: [event],
+						eventName: event.name,
+						args
+					}))];
+					if (event) topics = topics[0];
+				}
+				const { unsubscribe: unsubscribe_ } = await transport.subscribe({
+					params: ["logs", {
+						address,
+						topics
+					}],
+					onData(data) {
+						if (!active) return;
+						const log = data.result;
+						try {
+							const { eventName, args } = decodeEventLog({
+								abi: events_ ?? [],
+								data: log.data,
+								topics: log.topics,
+								strict
+							});
+							onLogs([formatLog(log, {
+								args,
+								eventName
+							})]);
+						} catch (err) {
+							let eventName;
+							let isUnnamed;
+							if (err instanceof DecodeLogDataMismatch || err instanceof DecodeLogTopicsMismatch) {
+								if (strict_) return;
+								eventName = err.abiItem.name;
+								isUnnamed = err.abiItem.inputs?.some((x) => !("name" in x && x.name));
+							}
+							onLogs([formatLog(log, {
+								args: isUnnamed ? [] : {},
+								eventName
+							})]);
+						}
+					},
+					onError(error) {
+						onError?.(error);
+					}
+				});
+				unsubscribe = unsubscribe_;
+				if (!active) unsubscribe();
+			} catch (err) {
+				onError?.(err);
+			}
+		})();
+		return () => unsubscribe();
+	};
+	return enablePolling ? pollEvent() : subscribeEvent();
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/watchPendingTransactions.js
+init_stringify();
+/**
+* Watches and returns pending transaction hashes.
+*
+* - Docs: https://viem.sh/docs/actions/public/watchPendingTransactions
+* - JSON-RPC Methods:
+*   - When `poll: true`
+*     - Calls [`eth_newPendingTransactionFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newpendingtransactionfilter) to initialize the filter.
+*     - Calls [`eth_getFilterChanges`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getFilterChanges) on a polling interval.
+*   - When `poll: false` & WebSocket Transport, uses a WebSocket subscription via [`eth_subscribe`](https://docs.alchemy.com/reference/eth-subscribe-polygon) and the `"newPendingTransactions"` event.
+*
+* This Action will batch up all the pending transactions found within the [`pollingInterval`](https://viem.sh/docs/actions/public/watchPendingTransactions#pollinginterval-optional), and invoke them via [`onTransactions`](https://viem.sh/docs/actions/public/watchPendingTransactions#ontransactions).
+*
+* @param client - Client to use
+* @param parameters - {@link WatchPendingTransactionsParameters}
+* @returns A function that can be invoked to stop watching for new pending transaction hashes. {@link WatchPendingTransactionsReturnType}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { watchPendingTransactions } from 'viem/public'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+* const unwatch = await watchPendingTransactions(client, {
+*   onTransactions: (hashes) => console.log(hashes),
+* })
+*/
+function watchPendingTransactions(client, { batch = true, onError, onTransactions, poll: poll_, pollingInterval = client.pollingInterval }) {
+	const enablePolling = typeof poll_ !== "undefined" ? poll_ : client.transport.type !== "webSocket" && client.transport.type !== "ipc";
+	const pollPendingTransactions = () => {
+		const observerId = stringify$1([
+			"watchPendingTransactions",
+			client.uid,
+			batch,
+			pollingInterval
+		]);
+		return observe(observerId, {
+			onTransactions,
+			onError
+		}, (emit) => {
+			let filter;
+			const unwatch = poll(async () => {
+				try {
+					if (!filter) try {
+						filter = await getAction(client, createPendingTransactionFilter, "createPendingTransactionFilter")({});
+						return;
+					} catch (err) {
+						unwatch();
+						throw err;
+					}
+					const hashes = await getAction(client, getFilterChanges, "getFilterChanges")({ filter });
+					if (hashes.length === 0) return;
+					if (batch) emit.onTransactions(hashes);
+					else for (const hash of hashes) emit.onTransactions([hash]);
+				} catch (err) {
+					emit.onError?.(err);
+				}
+			}, {
+				emitOnBegin: true,
+				interval: pollingInterval
+			});
+			return async () => {
+				if (filter) await getAction(client, uninstallFilter, "uninstallFilter")({ filter });
+				unwatch();
+			};
+		});
+	};
+	const subscribePendingTransactions = () => {
+		let active = true;
+		let unsubscribe = () => active = false;
+		(async () => {
+			try {
+				const { unsubscribe: unsubscribe_ } = await client.transport.subscribe({
+					params: ["newPendingTransactions"],
+					onData(data) {
+						if (!active) return;
+						const transaction = data.result;
+						onTransactions([transaction]);
+					},
+					onError(error) {
+						onError?.(error);
+					}
+				});
+				unsubscribe = unsubscribe_;
+				if (!active) unsubscribe();
+			} catch (err) {
+				onError?.(err);
+			}
+		})();
+		return () => unsubscribe();
+	};
+	return enablePolling ? pollPendingTransactions() : subscribePendingTransactions();
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/siwe/parseSiweMessage.js
+const siweDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+function isValidSiweDateTime(value) {
+	if (!siweDateTimeRegex.test(value)) return false;
+	return !Number.isNaN(new Date(value).getTime());
+}
+function parseSiweDateTime(value) {
+	if (!isValidSiweDateTime(value)) return /* @__PURE__ */ new Date(NaN);
+	return new Date(value);
+}
+/**
+* @description Parses EIP-4361 formatted message into message fields object.
+*
+* @see https://eips.ethereum.org/EIPS/eip-4361
+*
+* @returns EIP-4361 fields object
+*/
+function parseSiweMessage(message) {
+	const { scheme, statement, ...prefix } = message.match(prefixRegex)?.groups ?? {};
+	const { chainId, expirationTime, issuedAt, notBefore, requestId, resources: resources_, ...suffix } = message.match(suffixRegex)?.groups ?? {};
+	const resources = resources_?.split("\n- ").slice(1);
+	return {
+		...prefix,
+		...suffix,
+		...chainId ? { chainId: Number(chainId) } : {},
+		...expirationTime ? { expirationTime: parseSiweDateTime(expirationTime) } : {},
+		...issuedAt ? { issuedAt: parseSiweDateTime(issuedAt) } : {},
+		...notBefore ? { notBefore: parseSiweDateTime(notBefore) } : {},
+		...requestId ? { requestId } : {},
+		...resources ? { resources } : {},
+		...scheme ? { scheme } : {},
+		...statement ? { statement } : {}
+	};
+}
+const prefixRegex = /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+\-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/;
+const suffixRegex = /(?:URI: (?<uri>.+))\n(?:Version: (?<version>.+))\n(?:Chain ID: (?<chainId>\d+))\n(?:Nonce: (?<nonce>[a-zA-Z0-9]+))\n(?:Issued At: (?<issuedAt>.+))(?:\nExpiration Time: (?<expirationTime>.+))?(?:\nNot Before: (?<notBefore>.+))?(?:\nRequest ID: (?<requestId>.*))?(?:\nResources:(?<resources>(?:\n- .+)*))?/;
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/siwe/validateSiweMessage.js
+init_isAddress();
+init_isAddressEqual();
+/**
+* @description Validates EIP-4361 message.
+*
+* @see https://eips.ethereum.org/EIPS/eip-4361
+*/
+function validateSiweMessage(parameters) {
+	const { address, domain, message, nonce, scheme, time = /* @__PURE__ */ new Date() } = parameters;
+	if (domain && message.domain !== domain) return false;
+	if (nonce && message.nonce !== nonce) return false;
+	if (scheme && message.scheme !== scheme) return false;
+	if (Number.isNaN(time.getTime())) return false;
+	if (message.expirationTime) {
+		if (Number.isNaN(message.expirationTime.getTime())) return false;
+		if (time >= message.expirationTime) return false;
+	}
+	if (message.notBefore) {
+		if (Number.isNaN(message.notBefore.getTime())) return false;
+		if (time < message.notBefore) return false;
+	}
+	try {
+		if (!message.address) return false;
+		if (!isAddress(message.address, { strict: false })) return false;
+		if (address && !isAddressEqual(message.address, address)) return false;
+	} catch {
+		return false;
+	}
+	return true;
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/siwe/verifySiweMessage.js
+/**
+* Verifies [EIP-4361](https://eips.ethereum.org/EIPS/eip-4361) formatted message was signed.
+*
+* Compatible with Smart Contract Accounts & Externally Owned Accounts via [ERC-6492](https://eips.ethereum.org/EIPS/eip-6492).
+*
+* - Docs {@link https://viem.sh/docs/siwe/actions/verifySiweMessage}
+*
+* @param client - Client to use.
+* @param parameters - {@link VerifySiweMessageParameters}
+* @returns Whether or not the signature is valid. {@link VerifySiweMessageReturnType}
+*/
+async function verifySiweMessage(client, parameters) {
+	const { address, domain, message, nonce, scheme, signature, time = /* @__PURE__ */ new Date(), ...callRequest } = parameters;
+	const parsed = parseSiweMessage(message);
+	if (!parsed.address) return false;
+	if (!validateSiweMessage({
+		address,
+		domain,
+		message: parsed,
+		nonce,
+		scheme,
+		time
+	})) return false;
+	const hash = hashMessage(message);
+	return verifyHash(client, {
+		address: parsed.address,
+		hash,
+		signature,
+		...callRequest
+	});
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/internal.js
+init_abis();
+init_isAddress();
+init_isAddressEqual();
+init_encodeFunctionData();
+/**
+* Shapes a base-unit value into an {@link Amount} (base units, `decimals`, and
+* human-readable `formatted` string).
+*
+* @param amount - Amount in base units.
+* @param decimals - Token decimals used to format the amount.
+* @returns The {@link Amount}.
+*/
+function toAmount(amount, decimals) {
+	return {
+		amount,
+		decimals,
+		formatted: formatUnits(amount, decimals)
+	};
+}
+/**
+* Resolves the token contract `address` and `decimals` from a `token`, which is
+* either the symbol of a token declared on the client's `tokens` array or a
+* contract `address`.
+*
+* When `token` is a declared symbol, the `address` and `decimals` are resolved
+* from the Client's `tokens` array for the Client's `chain.id` (`decimals` can
+* be overridden via the explicit `decimals`). When `token` is an address, its
+* `decimals` is inferred from the Client's `tokens` array when the address
+* matches a declared token, otherwise taken from the explicit `decimals`.
+*
+* @param client - Client.
+* @param parameters - Parameters.
+* @returns The resolved `address` and `decimals`.
+*/
+function resolveToken(client, parameters) {
+	const { decimals, token } = parameters;
+	const declared = findDeclaredToken(client, token);
+	if (declared) return {
+		address: declared.address,
+		decimals: decimals ?? declared.decimals
+	};
+	if (isAddress(token, { strict: false })) return {
+		address: token,
+		decimals: decimals ?? inferDecimals(client, token)
+	};
+	throw new Error(`Token "${token}" is not a declared ERC-20 token on the client's \`tokens\` array (with an address for the client's chain), and is not a valid address.`);
+}
+/**
+* Finds the declared token on the Client's `tokens` array matching `token`
+* (either a token symbol or contract `address`), resolved to a {@link ResolvedToken}
+* for the Client's `chain.id`. Returns `undefined` when no declared token
+* matches, or the matching token has no address for the Client's chain.
+*
+* @param client - Client.
+* @param token - Token symbol (declared on the client's `tokens` array) or contract address.
+* @returns The matching resolved token config, or `undefined`.
+*/
+function findDeclaredToken(client, token) {
+	const tokens = client.tokens;
+	const chainId = client.chain?.id;
+	if (!tokens || chainId === void 0) return void 0;
+	const bySymbol = findTokenBySymbol(tokens, token);
+	if (bySymbol) return resolveTokenForChain(bySymbol, chainId);
+	if (isAddress(token, { strict: false })) for (const token_ of tokens) {
+		const resolved = resolveTokenForChain(token_, chainId);
+		if (resolved && isAddressEqual(resolved.address, token)) return resolved;
+	}
+}
+/**
+* Resolves a {@link Token} to a {@link ResolvedToken} for `chainId`, or
+* `undefined` when the token has no address for `chainId`. @internal
+*/
+function resolveTokenForChain(token, chainId) {
+	const address = token.addresses[chainId];
+	if (!address) return void 0;
+	return {
+		address,
+		currency: token.currency,
+		decimals: token.decimals,
+		name: token.name,
+		popular: token.popular,
+		symbol: token.symbol
+	};
+}
+/** Finds a {@link Token} by symbol (case-insensitively) on a `tokens` array. @internal */
+function findTokenBySymbol(tokens, symbol) {
+	const lowerSymbol = symbol.toLowerCase();
+	for (const token of tokens) if (token.symbol?.toLowerCase() === lowerSymbol) return token;
+}
+/**
+* Infers a token's `decimals` from the Client's `tokens` array by matching
+* `address` against each token's address for the Client's `chain.id`.
+* @internal
+*/
+function inferDecimals(client, address) {
+	const tokens = client.tokens;
+	const chainId = client.chain?.id;
+	if (tokens && chainId !== void 0) for (const token of tokens) {
+		const resolved = resolveTokenForChain(token, chainId);
+		if (resolved && isAddressEqual(resolved.address, address)) return resolved.decimals;
+	}
+}
+/**
+* Resolves token decimals, fetching from the token contract when they are not
+* provided explicitly or declared on the client.
+* @internal
+*/
+async function resolveTokenWithDecimals(client, parameters) {
+	const { address, decimals } = resolveToken(client, parameters);
+	if (decimals !== void 0) return {
+		address,
+		decimals
+	};
+	return {
+		address,
+		decimals: await readContract(client, {
+			abi: erc20Abi,
+			address,
+			functionName: "decimals"
+		})
+	};
+}
+function defineCall(call) {
+	return {
+		...call,
+		data: encodeFunctionData(call),
+		to: call.address
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/getAllowance.js
+init_abis();
+/**
+* Gets the ERC-20 allowance a spender has over an account's tokens.
+*
+* @example
+* ```ts
+* import { createClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { token } from 'viem/actions'
+*
+* const client = createClient({ chain: mainnet, transport: http() })
+*
+* const allowance = await token.getAllowance(client, {
+*   account: '0x...',
+*   spender: '0x...',
+*   token: '0x...',
+* })
+* ```
+*
+* @param client - Client.
+* @param parameters - Parameters.
+* @returns The allowance, in base units and human-readable form.
+*/
+async function getAllowance(client, parameters) {
+	const { account, decimals, spender, token, ...rest } = parameters;
+	const [amount, { decimals: resolved }] = await Promise.all([readContract(client, {
+		...rest,
+		...getAllowance.call(client, {
+			account,
+			spender,
+			token
+		})
+	}), resolveTokenWithDecimals(client, {
+		decimals,
+		token
+	})]);
+	return toAmount(amount, resolved);
+}
+(function(getAllowance) {
+	/**
+	* Defines a call to the `allowance` function.
+	*
+	* Can be passed as a parameter to `multicall`, `simulateContract`, or any
+	* other action that accepts a contract call. The token is selected by `token`
+	* symbol (resolved from the client's `tokens` array) or contract address.
+	*
+	* @param client - Client.
+	* @param args - Arguments.
+	* @returns The call.
+	*/
+	function call(client, args) {
+		return defineCall({
+			address: resolveToken(client, args).address,
+			abi: erc20Abi,
+			functionName: "allowance",
+			args: [args.account, args.spender]
+		});
+	}
+	getAllowance.call = call;
+})(getAllowance || (getAllowance = {}));
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/getBalance.js
+init_parseAccount();
+init_abis();
+/**
+* Gets the ERC-20 token balance of an account.
+*
+* @example
+* ```ts
+* import { createClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { token } from 'viem/actions'
+*
+* const client = createClient({ chain: mainnet, transport: http() })
+*
+* const balance = await token.getBalance(client, {
+*   account: '0x...',
+*   token: '0x...',
+* })
+* ```
+*
+* @param client - Client.
+* @param parameters - Parameters.
+* @returns The token balance, in base units and human-readable form.
+*/
+async function getBalance(client, parameters) {
+	const { account: account_ = client.account, decimals, token, ...rest } = parameters;
+	if (!account_) throw new AccountNotFoundError();
+	const account = parseAccount(account_).address;
+	const [amount, { decimals: resolved }] = await Promise.all([readContract(client, {
+		...rest,
+		...getBalance.call(client, {
+			account,
+			token
+		})
+	}), resolveTokenWithDecimals(client, {
+		decimals,
+		token
+	})]);
+	return toAmount(amount, resolved);
+}
+(function(getBalance) {
+	/**
+	* Defines a call to the `balanceOf` function.
+	*
+	* Can be passed as a parameter to `multicall`, `simulateContract`, or any
+	* other action that accepts a contract call. The token is selected by `token`
+	* symbol (resolved from the client's `tokens` array) or contract address.
+	*
+	* @param client - Client.
+	* @param args - Arguments.
+	* @returns The call.
+	*/
+	function call(client, args) {
+		const account_ = args.account ?? client.account;
+		if (!account_) throw new AccountNotFoundError();
+		const account = parseAccount(account_).address;
+		return defineCall({
+			address: resolveToken(client, args).address,
+			abi: erc20Abi,
+			functionName: "balanceOf",
+			args: [account]
+		});
+	}
+	getBalance.call = call;
+})(getBalance || (getBalance = {}));
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/getMetadata.js
+init_abis();
+/**
+* Gets the metadata (`decimals`, `name`, `symbol`) of an ERC-20 token.
+*
+* Fields declared on the Client's `tokens` array are used as-is; any missing
+* field is fetched from the token contract.
+*
+* @example
+* ```ts
+* import { createClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { token } from 'viem/actions'
+*
+* const client = createClient({ chain: mainnet, transport: http() })
+*
+* const metadata = await token.getMetadata(client, {
+*   token: '0x...',
+* })
+* ```
+*
+* @param client - Client.
+* @param parameters - Parameters.
+* @returns The token metadata (`decimals`, `name`, `symbol`).
+*/
+async function getMetadata(client, parameters) {
+	const { token, ...rest } = parameters;
+	const { address } = resolveToken(client, { token });
+	const declared = findDeclaredToken(client, token);
+	const [decimals_, name, symbol] = await Promise.all([
+		declared?.decimals ?? readContract(client, {
+			...rest,
+			abi: erc20Abi,
+			address,
+			functionName: "decimals"
+		}),
+		declared?.name ?? readContract(client, {
+			...rest,
+			abi: erc20Abi,
+			address,
+			functionName: "name"
+		}),
+		declared?.symbol ?? readContract(client, {
+			...rest,
+			abi: erc20Abi,
+			address,
+			functionName: "symbol"
+		})
+	]);
+	return {
+		decimals: decimals_,
+		name,
+		symbol
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/getTotalSupply.js
+init_abis();
+/**
+* Gets the total supply of an ERC-20 token.
+*
+* @example
+* ```ts
+* import { createClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+* import { token } from 'viem/actions'
+*
+* const client = createClient({ chain: mainnet, transport: http() })
+*
+* const totalSupply = await token.getTotalSupply(client, {
+*   token: '0x...',
+* })
+* ```
+*
+* @param client - Client.
+* @param parameters - Parameters.
+* @returns The token total supply, in base units and human-readable form.
+*/
+async function getTotalSupply(client, parameters) {
+	const { decimals, token, ...rest } = parameters;
+	const [amount, { decimals: resolved }] = await Promise.all([readContract(client, {
+		...rest,
+		...getTotalSupply.call(client, { token })
+	}), resolveTokenWithDecimals(client, {
+		decimals,
+		token
+	})]);
+	return toAmount(amount, resolved);
+}
+(function(getTotalSupply) {
+	/**
+	* Defines a call to the `totalSupply` function.
+	*
+	* Can be passed as a parameter to `multicall`, `simulateContract`, or any
+	* other action that accepts a contract call. The token is selected by `token`
+	* symbol (resolved from the client's `tokens` array) or contract address.
+	*
+	* @param client - Client.
+	* @param args - Arguments.
+	* @returns The call.
+	*/
+	function call(client, args) {
+		return defineCall({
+			address: resolveToken(client, args).address,
+			abi: erc20Abi,
+			args: [],
+			functionName: "totalSupply"
+		});
+	}
+	getTotalSupply.call = call;
+})(getTotalSupply || (getTotalSupply = {}));
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/decorators/public.js
+init_call();
+function publicActions(client) {
+	return {
+		call: (args) => call(client, args),
+		createAccessList: (args) => createAccessList(client, args),
+		createBlockFilter: () => createBlockFilter(client),
+		createContractEventFilter: (args) => createContractEventFilter(client, args),
+		createEventFilter: (args) => createEventFilter(client, args),
+		createPendingTransactionFilter: () => createPendingTransactionFilter(client),
+		estimateContractGas: (args) => estimateContractGas(client, args),
+		estimateGas: (args) => estimateGas(client, args),
+		getBalance: (args) => getBalance$1(client, args),
+		getBlobBaseFee: () => getBlobBaseFee(client),
+		getBlock: (args) => getBlock(client, args),
+		getBlockNumber: (args) => getBlockNumber(client, args),
+		getBlockReceipts: (args) => getBlockReceipts(client, args),
+		getBlockTransactionCount: (args) => getBlockTransactionCount(client, args),
+		getBytecode: (args) => getCode(client, args),
+		getChainId: () => getChainId(client),
+		getCode: (args) => getCode(client, args),
+		getContractEvents: (args) => getContractEvents(client, args),
+		getDelegation: (args) => getDelegation(client, args),
+		getEip712Domain: (args) => getEip712Domain(client, args),
+		getEnsAddress: (args) => getEnsAddress(client, args),
+		getEnsAvatar: (args) => getEnsAvatar(client, args),
+		getEnsName: (args) => getEnsName(client, args),
+		getEnsResolver: (args) => getEnsResolver(client, args),
+		getEnsText: (args) => getEnsText(client, args),
+		getFeeHistory: (args) => getFeeHistory(client, args),
+		estimateFeesPerGas: (args) => estimateFeesPerGas(client, args),
+		getFilterChanges: (args) => getFilterChanges(client, args),
+		getFilterLogs: (args) => getFilterLogs(client, args),
+		getGasPrice: () => getGasPrice(client),
+		getLogs: (args) => getLogs(client, args),
+		getProof: (args) => getProof(client, args),
+		estimateMaxPriorityFeePerGas: (args) => estimateMaxPriorityFeePerGas(client, args),
+		fillTransaction: (args) => fillTransaction(client, args),
+		getRawTransaction: (args) => getRawTransaction(client, args),
+		getStorageAt: (args) => getStorageAt(client, args),
+		getStorageValues: (args) => getStorageValues(client, args),
+		getTransaction: (args) => getTransaction(client, args),
+		getTransactionConfirmations: (args) => getTransactionConfirmations(client, args),
+		getTransactionCount: (args) => getTransactionCount(client, args),
+		getTransactionReceipt: (args) => getTransactionReceipt(client, args),
+		multicall: (args) => multicall(client, args),
+		prepareTransactionRequest: (args) => prepareTransactionRequest(client, args),
+		readContract: (args) => readContract(client, args),
+		sendRawTransaction: (args) => sendRawTransaction(client, args),
+		sendRawTransactionSync: (args) => sendRawTransactionSync(client, args),
+		simulate: (args) => simulateBlocks(client, args),
+		simulateBlocks: (args) => simulateBlocks(client, args),
+		simulateCalls: (args) => simulateCalls(client, args),
+		simulateContract: (args) => simulateContract(client, args),
+		verifyHash: (args) => verifyHash(client, args),
+		verifyMessage: (args) => verifyMessage(client, args),
+		verifySiweMessage: (args) => verifySiweMessage(client, args),
+		verifyTypedData: (args) => verifyTypedData(client, args),
+		uninstallFilter: (args) => uninstallFilter(client, args),
+		waitForTransactionReceipt: (args) => waitForTransactionReceipt(client, args),
+		watchBlockHeaders: (args) => watchBlockHeaders(client, args),
+		watchBlocks: (args) => watchBlocks(client, args),
+		watchBlockNumber: (args) => watchBlockNumber(client, args),
+		watchContractEvent: (args) => watchContractEvent(client, args),
+		watchEvent: (args) => watchEvent(client, args),
+		watchPendingTransactions: (args) => watchPendingTransactions(client, args),
+		token: bindPublicToken(client)
+	};
+}
+/**
+* Binds the read-only ERC-20 actions (and their `.call` helpers) to `client`.
+* Merged with the write actions from {@link walletActions} (when present) by the
+* Client's `extend`, which shallow-merges conflicting plain-object namespaces.
+* @internal
+*/
+function bindPublicToken(client) {
+	return {
+		getAllowance: bindActionDecorators(client, getAllowance),
+		getBalance: bindActionDecorators(client, getBalance),
+		getMetadata: bindActionDecorators(client, getMetadata),
+		getTotalSupply: bindActionDecorators(client, getTotalSupply)
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/createPublicClient.js
+/**
+* Creates a Public Client with a given [Transport](https://viem.sh/docs/clients/intro) configured for a [Chain](https://viem.sh/docs/clients/chains).
+*
+* - Docs: https://viem.sh/docs/clients/public
+*
+* A Public Client is an interface to "public" [JSON-RPC API](https://ethereum.org/en/developers/docs/apis/json-rpc/) methods such as retrieving block numbers, transactions, reading from smart contracts, etc through [Public Actions](/docs/actions/public/introduction).
+*
+* @param config - {@link PublicClientConfig}
+* @returns A Public Client. {@link PublicClient}
+*
+* @example
+* import { createPublicClient, http } from 'viem'
+* import { mainnet } from 'viem/chains'
+*
+* const client = createPublicClient({
+*   chain: mainnet,
+*   transport: http(),
+* })
+*/
+function createPublicClient(parameters) {
+	const { key = "public", name = "Public Client" } = parameters;
+	return createClient({
+		...parameters,
+		key,
+		name,
+		type: "publicClient"
+	}).extend(publicActions);
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/transports/createTransport.js
+/**
+* @description Creates an transport intended to be used with a client.
+*/
+function createTransport({ key, methods, name, request, retryCount = 3, retryDelay = 150, timeout, type }, value) {
+	const uid$1 = uid();
+	return {
+		config: {
+			key,
+			methods,
+			name,
+			request,
+			retryCount,
+			retryDelay,
+			timeout,
+			type
+		},
+		request: buildRequest(request, {
+			methods,
+			retryCount,
+			retryDelay,
+			uid: uid$1
+		}),
+		value
+	};
+}
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/errors/transport.js
+init_base();
+var UrlRequiredError = class extends BaseError$2 {
+	constructor() {
+		super("No URL was provided to the Transport. Please provide a valid RPC URL to the Transport.", {
+			docsPath: "/docs/clients/intro",
+			name: "UrlRequiredError"
+		});
+	}
+};
+
+//#endregion
+//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/transports/http.js
+init_request();
+init_createBatchScheduler();
+let signalId = 0;
+const signalIds = /* @__PURE__ */ new WeakMap();
+function getSignalId(signal) {
+	if (!signal) return "default";
+	const id = signalIds.get(signal);
+	if (id !== void 0) return id;
+	const nextId = signalId++;
+	signalIds.set(signal, nextId);
+	return nextId;
+}
+/**
+* @description Creates a HTTP transport that connects to a JSON-RPC API.
+*/
+function http(url, config = {}) {
+	const { batch, fetchFn, fetchOptions, key = "http", maxResponseBodySize, methods, name = "HTTP JSON-RPC", onFetchRequest, onFetchResponse, retryDelay, raw } = config;
+	return ({ chain, retryCount: retryCount_, timeout: timeout_ }) => {
+		const { batchSize = 1e3, wait = 0 } = typeof batch === "object" ? batch : {};
+		const retryCount = config.retryCount ?? retryCount_;
+		const timeout = timeout_ ?? config.timeout ?? 1e4;
+		const url_ = url || chain?.rpcUrls.default.http[0];
+		if (!url_) throw new UrlRequiredError();
+		const rpcClient = getHttpRpcClient(url_, {
+			fetchFn,
+			fetchOptions,
+			maxResponseBodySize,
+			onRequest: onFetchRequest,
+			onResponse: onFetchResponse,
+			timeout
+		});
+		return createTransport({
+			key,
+			methods,
+			name,
+			async request({ method, params }, options) {
+				const body = {
+					method,
+					params
+				};
+				const fetchOptions = options?.signal ? { signal: options.signal } : void 0;
+				const { schedule } = createBatchScheduler({
+					id: `${url_}.${getSignalId(options?.signal)}`,
+					wait,
+					shouldSplitBatch(requests) {
+						return requests.length > batchSize;
+					},
+					fn: (body) => rpcClient.request({
+						body,
+						fetchOptions
+					}),
+					sort: (a, b) => a.id - b.id
+				});
+				const fn = async (body) => batch ? schedule(body) : [await rpcClient.request({
+					body,
+					fetchOptions
+				})];
+				const [{ error, result }] = await fn(body);
+				if (raw) return {
+					error,
+					result
+				};
+				if (error) throw new RpcRequestError({
+					body,
+					error,
+					url: url_
+				});
+				return result;
+			},
+			retryCount,
+			retryDelay,
+			timeout,
+			type: "http"
+		}, {
+			fetchOptions,
+			url: url_
+		});
+	};
+}
+
+//#endregion
 //#region ../../node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/util.js
 function getEnumValues(entries) {
 	const numericValues = Object.values(entries).filter((v) => typeof v === "number");
@@ -17754,7 +21789,7 @@ const allowsEval = /* @__PURE__*/ cached(() => {
 		return false;
 	}
 });
-function isPlainObject$1(o) {
+function isPlainObject(o) {
 	if (isObject(o) === false) return false;
 	const ctor = o.constructor;
 	if (ctor === void 0) return true;
@@ -17765,7 +21800,7 @@ function isPlainObject$1(o) {
 	return true;
 }
 function shallowClone(o) {
-	if (isPlainObject$1(o)) return { ...o };
+	if (isPlainObject(o)) return { ...o };
 	if (Array.isArray(o)) return [...o];
 	if (o instanceof Map) return new Map(o);
 	if (o instanceof Set) return new Set(o);
@@ -17853,7 +21888,7 @@ function omit(schema, mask) {
 	}));
 }
 function extend(schema, shape) {
-	if (!isPlainObject$1(shape)) throw new Error("Invalid input to extend: expected a plain object");
+	if (!isPlainObject(shape)) throw new Error("Invalid input to extend: expected a plain object");
 	const checks = schema._zod.def.checks;
 	if (checks && checks.length > 0) {
 		const existingShape = sourceShape(schema);
@@ -17868,7 +21903,7 @@ function extended(schema, shape) {
 	return newShape;
 }
 function safeExtend(schema, shape) {
-	if (!isPlainObject$1(shape)) throw new Error("Invalid input to safeExtend: expected a plain object");
+	if (!isPlainObject(shape)) throw new Error("Invalid input to safeExtend: expected a plain object");
 	return clone(schema, mergeDefs(schema._zod.def, { shape: extended(schema, shape) }));
 }
 function merge(a, b) {
@@ -20014,7 +24049,7 @@ function mergeValues(a, b) {
 		valid: true,
 		data: a
 	};
-	if (isPlainObject$1(a) && isPlainObject$1(b)) {
+	if (isPlainObject(a) && isPlainObject(b)) {
 		const bKeys = Object.keys(b);
 		const sharedKeys = Object.keys(a).filter((key) => bKeys.indexOf(key) !== -1);
 		const newObj = {
@@ -20215,7 +24250,7 @@ const $ZodRecord = /*@__PURE__*/ $constructor("$ZodRecord", (inst, def) => {
 	memo?.attach(inst);
 	inst._zod.parse = (payload, ctx) => {
 		const input = payload.value;
-		if (!isPlainObject$1(input)) {
+		if (!isPlainObject(input)) {
 			payload.issues.push({
 				expected: "record",
 				code: "invalid_type",
@@ -22544,7 +26579,7 @@ const parse = /* @__PURE__ */ _parse(ZodRealError);
 const parseAsync = /* @__PURE__ */ _parseAsync(ZodRealError);
 const safeParse = /* @__PURE__ */ _safeParse(ZodRealError);
 const safeParseAsync = /* @__PURE__ */ _safeParseAsync(ZodRealError);
-const encode$1 = /* @__PURE__ */ _encode(ZodRealError);
+const encode = /* @__PURE__ */ _encode(ZodRealError);
 const decode = /* @__PURE__ */ _decode(ZodRealError);
 const encodeAsync = /* @__PURE__ */ _encodeAsync(ZodRealError);
 const decodeAsync = /* @__PURE__ */ _decodeAsync(ZodRealError);
@@ -22697,7 +26732,7 @@ const ZodType = /*@__PURE__*/ $constructor("ZodType", (inst, def) => {
 		return validateAsync$1(this, data, params);
 	},
 	encode: function _encode(data, params) {
-		return encode$1(this, data, params, { callee: _encode });
+		return encode(this, data, params, { callee: _encode });
 	},
 	decode: function _decode(data, params) {
 		return decode(this, data, params, { callee: _decode });
@@ -23482,3953 +27517,6 @@ function superRefine(fn, params) {
 }
 
 //#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/estimateContractGas.js
-init_parseAccount();
-init_encodeFunctionData();
-/**
-* Estimates the gas required to successfully execute a contract write function call.
-*
-* - Docs: https://viem.sh/docs/contract/estimateContractGas
-*
-* Internally, uses a [Public Client](https://viem.sh/docs/clients/public) to call the [`estimateGas` action](https://viem.sh/docs/actions/public/estimateGas) with [ABI-encoded `data`](https://viem.sh/docs/contract/encodeFunctionData).
-*
-* @param client - Client to use
-* @param parameters - {@link EstimateContractGasParameters}
-* @returns The gas estimate (in wei). {@link EstimateContractGasReturnType}
-*
-* @example
-* import { createPublicClient, http, parseAbi } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { estimateContractGas } from 'viem/contract'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const gas = await estimateContractGas(client, {
-*   address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
-*   abi: parseAbi(['function mint() public']),
-*   functionName: 'mint',
-*   account: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
-* })
-*/
-async function estimateContractGas(client, parameters) {
-	const { abi, address, args, functionName, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, ...request } = parameters;
-	const data = encodeFunctionData({
-		abi,
-		args,
-		functionName
-	});
-	try {
-		return await getAction(client, estimateGas, "estimateGas")({
-			data: `${data}${dataSuffix ? dataSuffix.replace("0x", "") : ""}`,
-			to: address,
-			...request
-		});
-	} catch (error) {
-		const account = request.account ? parseAccount(request.account) : void 0;
-		throw getContractError(error, {
-			abi,
-			address,
-			args,
-			docsPath: "/docs/contract/estimateContractGas",
-			functionName,
-			sender: account?.address
-		});
-	}
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/simulateContract.js
-init_parseAccount();
-init_decodeFunctionResult();
-init_encodeFunctionData();
-init_call();
-/**
-* Simulates/validates a contract interaction. This is useful for retrieving **return data** and **revert reasons** of contract write functions.
-*
-* - Docs: https://viem.sh/docs/contract/simulateContract
-* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/contracts_writing-to-contracts
-*
-* This function does not require gas to execute and _**does not**_ change the state of the blockchain. It is almost identical to [`readContract`](https://viem.sh/docs/contract/readContract), but also supports contract write functions.
-*
-* Internally, uses a [Public Client](https://viem.sh/docs/clients/public) to call the [`call` action](https://viem.sh/docs/actions/public/call) with [ABI-encoded `data`](https://viem.sh/docs/contract/encodeFunctionData).
-*
-* @param client - Client to use
-* @param parameters - {@link SimulateContractParameters}
-* @returns The simulation result and write request. {@link SimulateContractReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { simulateContract } from 'viem/contract'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const result = await simulateContract(client, {
-*   address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
-*   abi: parseAbi(['function mint(uint32) view returns (uint32)']),
-*   functionName: 'mint',
-*   args: ['69420'],
-*   account: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e',
-* })
-*/
-async function simulateContract(client, parameters) {
-	const { abi, address, args, functionName, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, ...callRequest } = parameters;
-	const account = callRequest.account ? parseAccount(callRequest.account) : client.account;
-	const calldata = encodeFunctionData({
-		abi,
-		args,
-		functionName
-	});
-	try {
-		const { data } = await getAction(client, call, "call")({
-			batch: false,
-			data: `${calldata}${dataSuffix ? dataSuffix.replace("0x", "") : ""}`,
-			to: address,
-			...callRequest,
-			account
-		});
-		return {
-			result: decodeFunctionResult({
-				abi,
-				args,
-				functionName,
-				data: data || "0x"
-			}),
-			request: {
-				abi: abi.filter((abiItem) => "name" in abiItem && abiItem.name === parameters.functionName),
-				address,
-				args,
-				dataSuffix,
-				functionName,
-				...callRequest,
-				account
-			}
-		};
-	} catch (error) {
-		throw getContractError(error, {
-			abi,
-			address,
-			args,
-			docsPath: "/docs/contract/simulateContract",
-			functionName,
-			sender: account?.address
-		});
-	}
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/uid.js
-const size = 256;
-let index = size;
-let buffer;
-function uid(length = 11) {
-	if (!buffer || index + length > size * 2) {
-		buffer = "";
-		index = 0;
-		for (let i = 0; i < size; i++) buffer += (256 + Math.random() * 256 | 0).toString(16).substring(1);
-	}
-	return buffer.substring(index, index++ + length);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/createClient.js
-init_parseAccount();
-function createClient(parameters) {
-	const { batch, chain, ccipRead, dataSuffix, key = "base", name = "Base Client", tokens, type = "base" } = parameters;
-	const experimental_blockTag = parameters.experimental_blockTag ?? (typeof chain?.experimental_preconfirmationTime === "number" ? "pending" : void 0);
-	const blockTime = chain?.blockTime ?? 12e3;
-	const defaultPollingInterval = Math.min(Math.max(Math.floor(blockTime / 2), 500), 4e3);
-	const pollingInterval = parameters.pollingInterval ?? defaultPollingInterval;
-	const cacheTime = parameters.cacheTime ?? pollingInterval;
-	const account = parameters.account ? parseAccount(parameters.account) : void 0;
-	const { config, request, value } = parameters.transport({
-		account,
-		chain,
-		pollingInterval
-	});
-	const client = {
-		account,
-		batch,
-		cacheTime,
-		ccipRead,
-		chain,
-		dataSuffix,
-		key,
-		name,
-		pollingInterval,
-		request,
-		tokens,
-		transport: {
-			...config,
-			...value
-		},
-		type,
-		uid: uid(),
-		...experimental_blockTag ? { experimental_blockTag } : {}
-	};
-	function extend(base) {
-		return (extendFn) => {
-			const extended = extendFn(base);
-			for (const key in client) delete extended[key];
-			const combined = {
-				...base,
-				...extended
-			};
-			for (const key in extended) {
-				const a = base[key];
-				const b = extended[key];
-				if (isPlainObject(a) && isPlainObject(b)) combined[key] = {
-					...a,
-					...b
-				};
-			}
-			return Object.assign(combined, { extend: extend(combined) });
-		};
-	}
-	return Object.assign(client, { extend: extend(client) });
-}
-/** Whether `value` is a plain object (`{}`), as opposed to a function, array,
-* or class instance. Used to decide which extension namespaces to merge. */
-function isPlainObject(value) {
-	if (typeof value !== "object" || value === null) return false;
-	const prototype = Object.getPrototypeOf(value);
-	return prototype === Object.prototype || prototype === null;
-}
-/**
-* Binds an action function to a `client`, returning a parameter-only version
-* along with any helpers the action exposes. Helpers that need a client
-* (`.call`, `.calls`, `.callWithPeriod`, `.estimateGas`, `.prepare`,
-* `.prepareRecipient`, `.predict`, `.simulate`) are bound to `client`;
-* pure helpers (`.extractEvent`, `.extractEvents`) are copied as-is. Used
-* by decorators that attach namespaced actions to a Client.
-* @internal
-*/
-function bindActionDecorators(client, action) {
-	const wrapped = (parameters = {}) => action(client, parameters);
-	for (const key of [
-		"call",
-		"calls",
-		"callWithPeriod",
-		"estimateGas",
-		"prepare",
-		"prepareRecipient",
-		"predict",
-		"simulate"
-	]) if (Object.hasOwn(action, key)) {
-		const helper = action[key];
-		wrapped[key] = (args = {}) => {
-			if (helper.length === 1) return helper(args);
-			return helper(client, args);
-		};
-	}
-	for (const key of ["extractEvent", "extractEvents"]) if (Object.hasOwn(action, key)) wrapped[key] = action[key];
-	return wrapped;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/errors.js
-init_base();
-init_contract$1();
-function isNullUniversalResolverError(err) {
-	if (!(err instanceof BaseError$2)) return false;
-	const cause = err.walk((e) => e instanceof ContractFunctionRevertedError);
-	if (!(cause instanceof ContractFunctionRevertedError)) return false;
-	if (cause.data?.errorName === "HttpError") return true;
-	if (cause.data?.errorName === "ResolverError") return true;
-	if (cause.data?.errorName === "ResolverNotContract") return true;
-	if (cause.data?.errorName === "ResolverNotFound") return true;
-	if (cause.data?.errorName === "ReverseAddressMismatch") return true;
-	if (cause.data?.errorName === "UnsupportedResolverProfile") return true;
-	return false;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/encodedLabelToLabelhash.js
-init_isHex();
-function encodedLabelToLabelhash(label) {
-	if (label.length !== 66) return null;
-	if (label.indexOf("[") !== 0) return null;
-	if (label.indexOf("]") !== 65) return null;
-	const hash = `0x${label.slice(1, 65)}`;
-	if (!isHex(hash)) return null;
-	return hash;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/namehash.js
-init_concat();
-init_toBytes();
-init_toHex();
-init_keccak256();
-/**
-* @description Hashes ENS name
-*
-* - Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `namehash`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
-*
-* @example
-* namehash('wevm.eth')
-* '0x08c85f2f4059e930c45a6aeff9dcd3bd95dc3c5c1cddef6a0626b31152248560'
-*
-* @link https://eips.ethereum.org/EIPS/eip-137
-*/
-function namehash(name) {
-	let result = (/* @__PURE__ */ new Uint8Array(32)).fill(0);
-	if (!name) return bytesToHex$1(result);
-	const labels = name.split(".");
-	for (let i = labels.length - 1; i >= 0; i -= 1) {
-		const hashFromEncodedLabel = encodedLabelToLabelhash(labels[i]);
-		const hashed = hashFromEncodedLabel ? toBytes$1(hashFromEncodedLabel) : keccak256$1(stringToBytes(labels[i]), "bytes");
-		result = keccak256$1(concat$1([result, hashed]), "bytes");
-	}
-	return bytesToHex$1(result);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/encodeLabelhash.js
-function encodeLabelhash(hash) {
-	return `[${hash.slice(2)}]`;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/labelhash.js
-init_toBytes();
-init_toHex();
-init_keccak256();
-/**
-* @description Hashes ENS label
-*
-* - Since ENS labels prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS labels](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `labelhash`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
-*
-* @example
-* labelhash('eth')
-* '0x4f5b812789fc606be1b3b16908db13fc7a9adf7ca72641f84d75b47069d3d7f0'
-*/
-function labelhash(label) {
-	const result = (/* @__PURE__ */ new Uint8Array(32)).fill(0);
-	if (!label) return bytesToHex$1(result);
-	return encodedLabelToLabelhash(label) || keccak256$1(stringToBytes(label));
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/packetToBytes.js
-init_toBytes();
-function packetToBytes(packet) {
-	const value = packet.replace(/^\.|\.$/gm, "");
-	if (value.length === 0) return /* @__PURE__ */ new Uint8Array(1);
-	const bytes = new Uint8Array(stringToBytes(value).byteLength + 2);
-	let offset = 0;
-	const list = value.split(".");
-	for (let i = 0; i < list.length; i++) {
-		let encoded = stringToBytes(list[i]);
-		if (encoded.byteLength > 255) encoded = stringToBytes(encodeLabelhash(labelhash(list[i])));
-		bytes[offset] = encoded.length;
-		bytes.set(encoded, offset + 1);
-		offset += encoded.length + 1;
-	}
-	if (bytes.byteLength !== offset + 1) return bytes.slice(0, offset + 1);
-	return bytes;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsAddress.js
-init_abis();
-init_decodeFunctionResult();
-init_encodeFunctionData();
-init_getAddress();
-init_getChainContractAddress();
-init_size();
-init_trim();
-init_toHex();
-init_localBatchGatewayRequest();
-/**
-* Gets address for ENS name.
-*
-* - Docs: https://viem.sh/docs/ens/actions/getEnsAddress
-* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
-*
-* Calls `resolve(bytes, bytes)` on ENS Universal Resolver Contract.
-*
-* Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `getEnsAddress`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
-*
-* @param client - Client to use
-* @param parameters - {@link GetEnsAddressParameters}
-* @returns Address for ENS name or `null` if not found. {@link GetEnsAddressReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getEnsAddress, normalize } from 'viem/ens'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const ensAddress = await getEnsAddress(client, {
-*   name: normalize('wevm.eth'),
-* })
-* // '0xd2135CfB216b74109775236E36d4b433F1DF507B'
-*/
-async function getEnsAddress(client, parameters) {
-	const { blockNumber, blockTag, coinType, name, gatewayUrls, strict } = parameters;
-	const { chain } = client;
-	const universalResolverAddress = (() => {
-		if (parameters.universalResolverAddress) return parameters.universalResolverAddress;
-		if (!chain) throw new Error("client chain not configured. universalResolverAddress is required.");
-		return getChainContractAddress({
-			blockNumber,
-			chain,
-			contract: "ensUniversalResolver"
-		});
-	})();
-	const tlds = chain?.ensTlds;
-	if (tlds && !tlds.some((tld) => name.endsWith(tld))) return null;
-	const args = (() => {
-		if (coinType != null) return [namehash(name), BigInt(coinType)];
-		return [namehash(name)];
-	})();
-	try {
-		const functionData = encodeFunctionData({
-			abi: addressResolverAbi,
-			functionName: "addr",
-			args
-		});
-		const readContractParameters = {
-			address: universalResolverAddress,
-			abi: universalResolverResolveAbi,
-			functionName: "resolveWithGateways",
-			args: [
-				toHex(packetToBytes(name)),
-				functionData,
-				gatewayUrls ?? ["x-batch-gateway:true"]
-			],
-			blockNumber,
-			blockTag
-		};
-		const res = await getAction(client, readContract, "readContract")(readContractParameters);
-		if (res[0] === "0x") return null;
-		const address = decodeAddress({
-			coinType,
-			data: res[0],
-			args
-		});
-		if (address === "0x") return null;
-		if (trim$1(address) === "0x00") return null;
-		return address;
-	} catch (err) {
-		if (strict) throw err;
-		if (isNullUniversalResolverError(err)) return null;
-		throw err;
-	}
-}
-function decodeAddress({ coinType, data, args }) {
-	try {
-		return decodeFunctionResult({
-			abi: addressResolverAbi,
-			args,
-			functionName: "addr",
-			data
-		});
-	} catch (err) {
-		if (coinType == null) throw err;
-		const address = trim$1(data);
-		if (size$3(address) === 20) return getAddress(address);
-		throw err;
-	}
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/errors/ens.js
-init_base();
-var EnsAvatarInvalidMetadataError = class extends BaseError$2 {
-	constructor({ data }) {
-		super("Unable to extract image from metadata. The metadata may be malformed or invalid.", {
-			metaMessages: [
-				"- Metadata must be a JSON object with at least an `image`, `image_url` or `image_data` property.",
-				"",
-				`Provided data: ${JSON.stringify(data)}`
-			],
-			name: "EnsAvatarInvalidMetadataError"
-		});
-	}
-};
-var EnsAvatarInvalidNftUriError = class extends BaseError$2 {
-	constructor({ reason }) {
-		super(`ENS NFT avatar URI is invalid. ${reason}`, { name: "EnsAvatarInvalidNftUriError" });
-	}
-};
-var EnsAvatarUriResolutionError = class extends BaseError$2 {
-	constructor({ uri }) {
-		super(`Unable to resolve ENS avatar URI "${uri}". The URI may be malformed, invalid, or does not respond with a valid image.`, { name: "EnsAvatarUriResolutionError" });
-	}
-};
-var EnsAvatarUnsupportedNamespaceError = class extends BaseError$2 {
-	constructor({ namespace }) {
-		super(`ENS NFT avatar namespace "${namespace}" is not supported. Must be "erc721" or "erc1155".`, { name: "EnsAvatarUnsupportedNamespaceError" });
-	}
-};
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/avatar/utils.js
-const networkRegex = /(?<protocol>https?:\/\/[^/]*|ipfs:\/|ipns:\/|ar:\/)?(?<root>\/)?(?<subpath>ipfs\/|ipns\/)?(?<target>[\w\-.]+)(?<subtarget>\/.*)?/;
-const ipfsHashRegex = /^(Qm[1-9A-HJ-NP-Za-km-z]{44,}|b[A-Za-z2-7]{58,}|B[A-Z2-7]{58,}|z[1-9A-HJ-NP-Za-km-z]{48,}|F[0-9A-F]{50,})(\/(?<target>[\w\-.]+))?(?<subtarget>\/.*)?$/;
-const base64Regex = /^data:([a-zA-Z\-/+]*);base64,([^"].*)/;
-const dataURIRegex = /^data:([a-zA-Z\-/+]*)?(;[a-zA-Z0-9].*?)?(,)/;
-/** @internal */
-async function isImageUri(uri) {
-	try {
-		const res = await fetch(uri, { method: "HEAD" });
-		if (res.status === 200) return res.headers.get("content-type")?.startsWith("image/");
-		return false;
-	} catch (error) {
-		if (typeof error === "object" && typeof error.response !== "undefined") return false;
-		if (!Object.hasOwn(globalThis, "Image")) return false;
-		return new Promise((resolve) => {
-			const img = new Image();
-			img.onload = () => {
-				resolve(true);
-			};
-			img.onerror = () => {
-				resolve(false);
-			};
-			img.src = uri;
-		});
-	}
-}
-/** @internal */
-function getGateway(custom, defaultGateway) {
-	if (!custom) return defaultGateway;
-	if (custom.endsWith("/")) return custom.slice(0, -1);
-	return custom;
-}
-function resolveAvatarUri({ uri, gatewayUrls }) {
-	const isEncoded = base64Regex.test(uri);
-	if (isEncoded) return {
-		uri,
-		isOnChain: true,
-		isEncoded
-	};
-	const ipfsGateway = getGateway(gatewayUrls?.ipfs, "https://ipfs.io");
-	const arweaveGateway = getGateway(gatewayUrls?.arweave, "https://arweave.net");
-	const { protocol, subpath, target, subtarget = "" } = uri.match(networkRegex)?.groups || {};
-	const isIPNS = protocol === "ipns:/" || subpath === "ipns/";
-	const isIPFS = protocol === "ipfs:/" || subpath === "ipfs/" || ipfsHashRegex.test(uri);
-	if (uri.startsWith("http") && !isIPNS && !isIPFS) {
-		let replacedUri = uri;
-		if (gatewayUrls?.arweave) replacedUri = uri.replace(/https:\/\/arweave.net/g, gatewayUrls?.arweave);
-		return {
-			uri: replacedUri,
-			isOnChain: false,
-			isEncoded: false
-		};
-	}
-	if ((isIPNS || isIPFS) && target) return {
-		uri: `${ipfsGateway}/${isIPNS ? "ipns" : "ipfs"}/${target}${subtarget}`,
-		isOnChain: false,
-		isEncoded: false
-	};
-	if (protocol === "ar:/" && target) return {
-		uri: `${arweaveGateway}/${target}${subtarget || ""}`,
-		isOnChain: false,
-		isEncoded: false
-	};
-	let parsedUri = uri.replace(dataURIRegex, "");
-	if (parsedUri.startsWith("<svg")) parsedUri = `data:image/svg+xml;base64,${btoa(parsedUri)}`;
-	if (parsedUri.startsWith("data:") || parsedUri.startsWith("{")) return {
-		uri: parsedUri,
-		isOnChain: true,
-		isEncoded: false
-	};
-	throw new EnsAvatarUriResolutionError({ uri });
-}
-function getJsonImage(data) {
-	if (typeof data !== "object" || !("image" in data) && !("image_url" in data) && !("image_data" in data)) throw new EnsAvatarInvalidMetadataError({ data });
-	return data.image || data.image_url || data.image_data;
-}
-async function getMetadataAvatarUri({ gatewayUrls, uri }) {
-	try {
-		return await parseAvatarUri({
-			gatewayUrls,
-			uri: getJsonImage(await fetch(uri).then((res) => res.json()))
-		});
-	} catch {
-		throw new EnsAvatarUriResolutionError({ uri });
-	}
-}
-async function parseAvatarUri({ gatewayUrls, uri }) {
-	const { uri: resolvedURI, isOnChain } = resolveAvatarUri({
-		uri,
-		gatewayUrls
-	});
-	if (isOnChain) return resolvedURI;
-	if (await isImageUri(resolvedURI)) return resolvedURI;
-	throw new EnsAvatarUriResolutionError({ uri });
-}
-function parseNftUri(uri_) {
-	let uri = uri_;
-	if (uri.startsWith("did:nft:")) uri = uri.replace("did:nft:", "").replace(/_/g, "/");
-	const [reference, asset_namespace, tokenID] = uri.split("/");
-	const [eip_namespace, chainID] = reference.split(":");
-	const [erc_namespace, contractAddress] = asset_namespace.split(":");
-	if (!eip_namespace || eip_namespace.toLowerCase() !== "eip155") throw new EnsAvatarInvalidNftUriError({ reason: "Only EIP-155 supported" });
-	if (!chainID) throw new EnsAvatarInvalidNftUriError({ reason: "Chain ID not found" });
-	if (!contractAddress) throw new EnsAvatarInvalidNftUriError({ reason: "Contract address not found" });
-	if (!tokenID) throw new EnsAvatarInvalidNftUriError({ reason: "Token ID not found" });
-	if (!erc_namespace) throw new EnsAvatarInvalidNftUriError({ reason: "ERC namespace not found" });
-	return {
-		chainID: Number.parseInt(chainID, 10),
-		namespace: erc_namespace.toLowerCase(),
-		contractAddress,
-		tokenID
-	};
-}
-async function getNftTokenUri(client, { nft }) {
-	if (nft.namespace === "erc721") return readContract(client, {
-		address: nft.contractAddress,
-		abi: [{
-			name: "tokenURI",
-			type: "function",
-			stateMutability: "view",
-			inputs: [{
-				name: "tokenId",
-				type: "uint256"
-			}],
-			outputs: [{
-				name: "",
-				type: "string"
-			}]
-		}],
-		functionName: "tokenURI",
-		args: [BigInt(nft.tokenID)]
-	});
-	if (nft.namespace === "erc1155") return readContract(client, {
-		address: nft.contractAddress,
-		abi: [{
-			name: "uri",
-			type: "function",
-			stateMutability: "view",
-			inputs: [{
-				name: "_id",
-				type: "uint256"
-			}],
-			outputs: [{
-				name: "",
-				type: "string"
-			}]
-		}],
-		functionName: "uri",
-		args: [BigInt(nft.tokenID)]
-	});
-	throw new EnsAvatarUnsupportedNamespaceError({ namespace: nft.namespace });
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/ens/avatar/parseAvatarRecord.js
-async function parseAvatarRecord(client, { gatewayUrls, record }) {
-	if (/eip155:/i.test(record)) return parseNftAvatarUri(client, {
-		gatewayUrls,
-		record
-	});
-	return parseAvatarUri({
-		uri: record,
-		gatewayUrls
-	});
-}
-async function parseNftAvatarUri(client, { gatewayUrls, record }) {
-	const nft = parseNftUri(record);
-	const nftUri = await getNftTokenUri(client, { nft });
-	const { uri: resolvedNftUri, isOnChain, isEncoded } = resolveAvatarUri({
-		uri: nftUri,
-		gatewayUrls
-	});
-	if (isOnChain && (resolvedNftUri.includes("data:application/json;base64,") || resolvedNftUri.startsWith("{"))) {
-		const encodedJson = isEncoded ? atob(resolvedNftUri.replace("data:application/json;base64,", "")) : resolvedNftUri;
-		const decoded = JSON.parse(encodedJson);
-		return parseAvatarUri({
-			uri: getJsonImage(decoded),
-			gatewayUrls
-		});
-	}
-	let uriTokenId = nft.tokenID;
-	if (nft.namespace === "erc1155") uriTokenId = uriTokenId.replace("0x", "").padStart(64, "0");
-	return getMetadataAvatarUri({
-		gatewayUrls,
-		uri: resolvedNftUri.replace(/(?:0x)?{id}/, uriTokenId)
-	});
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsText.js
-init_abis();
-init_decodeFunctionResult();
-init_encodeFunctionData();
-init_getChainContractAddress();
-init_toHex();
-init_localBatchGatewayRequest();
-/**
-* Gets a text record for specified ENS name.
-*
-* - Docs: https://viem.sh/docs/ens/actions/getEnsResolver
-* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
-*
-* Calls `resolve(bytes, bytes)` on ENS Universal Resolver Contract.
-*
-* Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `getEnsAddress`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
-*
-* @param client - Client to use
-* @param parameters - {@link GetEnsTextParameters}
-* @returns Address for ENS resolver. {@link GetEnsTextReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getEnsText, normalize } from 'viem/ens'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const twitterRecord = await getEnsText(client, {
-*   name: normalize('wevm.eth'),
-*   key: 'com.twitter',
-* })
-* // 'wevm_dev'
-*/
-async function getEnsText(client, parameters) {
-	const { blockNumber, blockTag, key, name, gatewayUrls, strict } = parameters;
-	const { chain } = client;
-	const universalResolverAddress = (() => {
-		if (parameters.universalResolverAddress) return parameters.universalResolverAddress;
-		if (!chain) throw new Error("client chain not configured. universalResolverAddress is required.");
-		return getChainContractAddress({
-			blockNumber,
-			chain,
-			contract: "ensUniversalResolver"
-		});
-	})();
-	const tlds = chain?.ensTlds;
-	if (tlds && !tlds.some((tld) => name.endsWith(tld))) return null;
-	try {
-		const readContractParameters = {
-			address: universalResolverAddress,
-			abi: universalResolverResolveAbi,
-			args: [
-				toHex(packetToBytes(name)),
-				encodeFunctionData({
-					abi: textResolverAbi,
-					functionName: "text",
-					args: [namehash(name), key]
-				}),
-				gatewayUrls ?? ["x-batch-gateway:true"]
-			],
-			functionName: "resolveWithGateways",
-			blockNumber,
-			blockTag
-		};
-		const res = await getAction(client, readContract, "readContract")(readContractParameters);
-		if (res[0] === "0x") return null;
-		const record = decodeFunctionResult({
-			abi: textResolverAbi,
-			functionName: "text",
-			data: res[0]
-		});
-		return record === "" ? null : record;
-	} catch (err) {
-		if (strict) throw err;
-		if (isNullUniversalResolverError(err)) return null;
-		throw err;
-	}
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsAvatar.js
-/**
-* Gets the avatar of an ENS name.
-*
-* - Docs: https://viem.sh/docs/ens/actions/getEnsAvatar
-* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
-*
-* Calls [`getEnsText`](https://viem.sh/docs/ens/actions/getEnsText) with `key` set to `'avatar'`.
-*
-* Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `getEnsAddress`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
-*
-* @param client - Client to use
-* @param parameters - {@link GetEnsAvatarParameters}
-* @returns Avatar URI or `null` if not found. {@link GetEnsAvatarReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getEnsAvatar, normalize } from 'viem/ens'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const ensAvatar = await getEnsAvatar(client, {
-*   name: normalize('wevm.eth'),
-* })
-* // 'https://ipfs.io/ipfs/Qma8mnp6xV3J2cRNf3mTth5C8nV11CAnceVinc3y8jSbio'
-*/
-async function getEnsAvatar(client, { blockNumber, blockTag, assetGatewayUrls, name, gatewayUrls, strict, universalResolverAddress }) {
-	const record = await getAction(client, getEnsText, "getEnsText")({
-		blockNumber,
-		blockTag,
-		key: "avatar",
-		name,
-		universalResolverAddress,
-		gatewayUrls,
-		strict
-	});
-	if (!record) return null;
-	try {
-		return await parseAvatarRecord(client, {
-			record,
-			gatewayUrls: assetGatewayUrls
-		});
-	} catch {
-		return null;
-	}
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsName.js
-init_abis();
-init_getChainContractAddress();
-init_localBatchGatewayRequest();
-/**
-* Gets primary name for specified address.
-*
-* - Docs: https://viem.sh/docs/ens/actions/getEnsName
-* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
-*
-* Calls `reverse(bytes)` on ENS Universal Resolver Contract to "reverse resolve" the address to the primary ENS name.
-*
-* @param client - Client to use
-* @param parameters - {@link GetEnsNameParameters}
-* @returns Name or `null` if not found. {@link GetEnsNameReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getEnsName } from 'viem/ens'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const ensName = await getEnsName(client, {
-*   address: '0xd2135CfB216b74109775236E36d4b433F1DF507B',
-* })
-* // 'wevm.eth'
-*/
-async function getEnsName(client, parameters) {
-	const { address, blockNumber, blockTag, coinType = 60n, gatewayUrls, strict } = parameters;
-	const { chain } = client;
-	const universalResolverAddress = (() => {
-		if (parameters.universalResolverAddress) return parameters.universalResolverAddress;
-		if (!chain) throw new Error("client chain not configured. universalResolverAddress is required.");
-		return getChainContractAddress({
-			blockNumber,
-			chain,
-			contract: "ensUniversalResolver"
-		});
-	})();
-	try {
-		const readContractParameters = {
-			address: universalResolverAddress,
-			abi: universalResolverReverseAbi,
-			args: [
-				address,
-				coinType,
-				gatewayUrls ?? ["x-batch-gateway:true"]
-			],
-			functionName: "reverseWithGateways",
-			blockNumber,
-			blockTag
-		};
-		const [name] = await getAction(client, readContract, "readContract")(readContractParameters);
-		return name || null;
-	} catch (err) {
-		if (strict) throw err;
-		if (isNullUniversalResolverError(err)) return null;
-		throw err;
-	}
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/ens/getEnsResolver.js
-init_getChainContractAddress();
-init_toHex();
-/**
-* Gets resolver for ENS name.
-*
-* - Docs: https://viem.sh/docs/ens/actions/getEnsResolver
-* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/ens
-*
-* Calls `findResolver(bytes)` on ENS Universal Resolver Contract to retrieve the resolver of an ENS name.
-*
-* Since ENS names prohibit certain forbidden characters (e.g. underscore) and have other validation rules, you likely want to [normalize ENS names](https://docs.ens.domains/contract-api-reference/name-processing#normalising-names) with [UTS-46 normalization](https://unicode.org/reports/tr46) before passing them to `getEnsAddress`. You can use the built-in [`normalize`](https://viem.sh/docs/ens/utilities/normalize) function for this.
-*
-* @param client - Client to use
-* @param parameters - {@link GetEnsResolverParameters}
-* @returns Address for ENS resolver. {@link GetEnsResolverReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getEnsResolver, normalize } from 'viem/ens'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const resolverAddress = await getEnsResolver(client, {
-*   name: normalize('wevm.eth'),
-* })
-* // '0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41'
-*/
-async function getEnsResolver(client, parameters) {
-	const { blockNumber, blockTag, name } = parameters;
-	const { chain } = client;
-	const universalResolverAddress = (() => {
-		if (parameters.universalResolverAddress) return parameters.universalResolverAddress;
-		if (!chain) throw new Error("client chain not configured. universalResolverAddress is required.");
-		return getChainContractAddress({
-			blockNumber,
-			chain,
-			contract: "ensUniversalResolver"
-		});
-	})();
-	const tlds = chain?.ensTlds;
-	if (tlds && !tlds.some((tld) => name.endsWith(tld))) throw new Error(`${name} is not a valid ENS TLD (${tlds?.join(", ")}) for chain "${chain.name}" (id: ${chain.id}).`);
-	const [resolverAddress] = await getAction(client, readContract, "readContract")({
-		address: universalResolverAddress,
-		abi: [{
-			inputs: [{ type: "bytes" }],
-			name: "findResolver",
-			outputs: [
-				{ type: "address" },
-				{ type: "bytes32" },
-				{ type: "uint256" }
-			],
-			stateMutability: "view",
-			type: "function"
-		}],
-		functionName: "findResolver",
-		args: [toHex(packetToBytes(name))],
-		blockNumber,
-		blockTag
-	});
-	return resolverAddress;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/createAccessList.js
-init_parseAccount();
-init_base();
-init_toHex();
-init_getCallError();
-init_extract();
-init_transactionRequest();
-init_assertRequest();
-/**
-* Creates an EIP-2930 access list.
-*
-* - Docs: https://viem.sh/docs/actions/public/createAccessList
-* - JSON-RPC Methods: `eth_createAccessList`
-*
-* @param client - Client to use
-* @param parameters - {@link CreateAccessListParameters}
-* @returns The access list. {@link CreateAccessListReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { createAccessList } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const data = await createAccessList(client, {
-*   account: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
-*   data: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-* })
-*/
-async function createAccessList(client, args) {
-	const { account: account_ = client.account, blockNumber, blockTag = "latest", blobs, data, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, to, value, ...rest } = args;
-	const account = account_ ? parseAccount(account_) : void 0;
-	try {
-		assertRequest(args);
-		const block = (typeof blockNumber === "bigint" ? numberToHex(blockNumber) : void 0) || blockTag;
-		const chainFormat = client.chain?.formatters?.transactionRequest?.format;
-		const request = (chainFormat || formatTransactionRequest)({
-			...extract$1(rest, { format: chainFormat }),
-			account,
-			blobs,
-			data,
-			gas,
-			gasPrice,
-			maxFeePerBlobGas,
-			maxFeePerGas,
-			maxPriorityFeePerGas,
-			to,
-			value
-		}, "createAccessList");
-		const response = await client.request({
-			method: "eth_createAccessList",
-			params: [request, block]
-		});
-		if (response.error) throw new BaseError$2(response.error, { details: response.error });
-		return {
-			accessList: response.accessList,
-			gasUsed: BigInt(response.gasUsed)
-		};
-	} catch (err) {
-		throw getCallError(err, {
-			...args,
-			account,
-			chain: client.chain
-		});
-	}
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/createBlockFilter.js
-/**
-* Creates a [`Filter`](https://viem.sh/docs/glossary/types#filter) to listen for new block hashes that can be used with [`getFilterChanges`](https://viem.sh/docs/actions/public/getFilterChanges).
-*
-* - Docs: https://viem.sh/docs/actions/public/createBlockFilter
-* - JSON-RPC Methods: [`eth_newBlockFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newBlockFilter)
-*
-* @param client - Client to use
-* @returns [`Filter`](https://viem.sh/docs/glossary/types#filter). {@link CreateBlockFilterReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { createBlockFilter } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const filter = await createBlockFilter(client)
-* // { id: "0x345a6572337856574a76364e457a4366", type: 'block' }
-*/
-async function createBlockFilter(client) {
-	const getRequest = createFilterRequestScope(client, { method: "eth_newBlockFilter" });
-	const id = await client.request({ method: "eth_newBlockFilter" });
-	return {
-		id,
-		request: getRequest(id),
-		type: "block"
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/createEventFilter.js
-init_toHex();
-/**
-* Creates a [`Filter`](https://viem.sh/docs/glossary/types#filter) to listen for new events that can be used with [`getFilterChanges`](https://viem.sh/docs/actions/public/getFilterChanges).
-*
-* - Docs: https://viem.sh/docs/actions/public/createEventFilter
-* - JSON-RPC Methods: [`eth_newFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newfilter)
-*
-* @param client - Client to use
-* @param parameters - {@link CreateEventFilterParameters}
-* @returns [`Filter`](https://viem.sh/docs/glossary/types#filter). {@link CreateEventFilterReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { createEventFilter } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const filter = await createEventFilter(client, {
-*   address: '0xfba3912ca04dd458c843e2ee08967fc04f3579c2',
-* })
-*/
-async function createEventFilter(client, { address, args, event, events: events_, fromBlock, strict, toBlock } = {}) {
-	const events = events_ ?? (event ? [event] : void 0);
-	const getRequest = createFilterRequestScope(client, { method: "eth_newFilter" });
-	let topics = [];
-	if (events) {
-		topics = [events.flatMap((event) => encodeEventTopics({
-			abi: [event],
-			eventName: event.name,
-			args
-		}))];
-		if (event) topics = topics[0];
-	}
-	const id = await client.request({
-		method: "eth_newFilter",
-		params: [{
-			address,
-			fromBlock: typeof fromBlock === "bigint" ? numberToHex(fromBlock) : fromBlock,
-			toBlock: typeof toBlock === "bigint" ? numberToHex(toBlock) : toBlock,
-			...topics.length ? { topics } : {}
-		}]
-	});
-	return {
-		abi: events,
-		args,
-		eventName: event ? event.name : void 0,
-		fromBlock,
-		id,
-		request: getRequest(id),
-		strict: Boolean(strict),
-		toBlock,
-		type: "event"
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/createPendingTransactionFilter.js
-/**
-* Creates a Filter to listen for new pending transaction hashes that can be used with [`getFilterChanges`](https://viem.sh/docs/actions/public/getFilterChanges).
-*
-* - Docs: https://viem.sh/docs/actions/public/createPendingTransactionFilter
-* - JSON-RPC Methods: [`eth_newPendingTransactionFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newpendingtransactionfilter)
-*
-* @param client - Client to use
-* @returns [`Filter`](https://viem.sh/docs/glossary/types#filter). {@link CreateBlockFilterReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { createPendingTransactionFilter } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const filter = await createPendingTransactionFilter(client)
-* // { id: "0x345a6572337856574a76364e457a4366", type: 'transaction' }
-*/
-async function createPendingTransactionFilter(client) {
-	const getRequest = createFilterRequestScope(client, { method: "eth_newPendingTransactionFilter" });
-	const id = await client.request({ method: "eth_newPendingTransactionFilter" });
-	return {
-		id,
-		request: getRequest(id),
-		type: "transaction"
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getBalance.js
-init_abis();
-init_decodeFunctionResult();
-init_encodeFunctionData();
-init_formatBlockParameter();
-init_call();
-/**
-* Returns the balance of an address in wei.
-*
-* - Docs: https://viem.sh/docs/actions/public/getBalance
-* - JSON-RPC Methods: [`eth_getBalance`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getbalance)
-*
-* You can convert the balance to ether units with [`formatEther`](https://viem.sh/docs/utilities/formatEther).
-*
-* ```ts
-* const balance = await getBalance(client, {
-*   address: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e',
-*   blockTag: 'safe'
-* })
-* const balanceAsEther = formatEther(balance)
-* // "6.942"
-* ```
-*
-* @param client - Client to use
-* @param parameters - {@link GetBalanceParameters}
-* @returns The balance of the address in wei. {@link GetBalanceReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getBalance } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const balance = await getBalance(client, {
-*   address: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e',
-* })
-* // 10000000000000000000000n (wei)
-*/
-async function getBalance$1(client, { address, blockHash, blockNumber, blockTag = client.experimental_blockTag ?? "latest", requireCanonical }) {
-	const block = formatBlockParameter({
-		blockHash,
-		blockNumber,
-		blockTag,
-		requireCanonical
-	});
-	if (client.batch?.multicall && client.chain?.contracts?.multicall3) {
-		const multicall3Address = client.chain.contracts.multicall3.address;
-		const calldata = encodeFunctionData({
-			abi: multicall3Abi,
-			functionName: "getEthBalance",
-			args: [address]
-		});
-		const { data } = await getAction(client, call, "call")({
-			to: multicall3Address,
-			data: calldata,
-			blockHash,
-			blockNumber,
-			blockTag,
-			requireCanonical
-		});
-		return decodeFunctionResult({
-			abi: multicall3Abi,
-			functionName: "getEthBalance",
-			args: [address],
-			data: data || "0x"
-		});
-	}
-	const balance = await client.request({
-		method: "eth_getBalance",
-		params: [address, block]
-	});
-	return BigInt(balance);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getBlobBaseFee.js
-/**
-* Returns the base fee per blob gas in wei.
-*
-* - Docs: https://viem.sh/docs/actions/public/getBlobBaseFee
-* - JSON-RPC Methods: [`eth_blobBaseFee`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_blobBaseFee)
-*
-* @param client - Client to use
-* @returns The blob base fee (in wei). {@link GetBlobBaseFeeReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getBlobBaseFee } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const blobBaseFee = await getBlobBaseFee(client)
-*/
-async function getBlobBaseFee(client) {
-	const baseFee = await client.request({ method: "eth_blobBaseFee" });
-	return BigInt(baseFee);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getBlockReceipts.js
-init_toHex();
-/**
-* Returns the transaction receipts of a block at a block number, hash, or tag.
-*
-* - Docs: https://viem.sh/docs/actions/public/getBlockReceipts
-* - JSON-RPC Methods: [`eth_getBlockReceipts`](https://ethereum.github.io/execution-apis/api/methods/eth_getBlockReceipts/)
-*
-* @param client - Client to use
-* @param parameters - {@link GetBlockReceiptsParameters}
-* @returns The transaction receipts. {@link GetBlockReceiptsReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getBlockReceipts } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const receipts = await getBlockReceipts(client, {
-*   blockNumber: 69420n,
-* })
-*/
-async function getBlockReceipts(client, { blockHash, blockNumber, blockTag = client.experimental_blockTag ?? "latest" } = {}) {
-	const blockNumberHex = blockNumber !== void 0 ? numberToHex(blockNumber) : void 0;
-	const receipts = await client.request({
-		method: "eth_getBlockReceipts",
-		params: [blockHash || blockNumberHex || blockTag]
-	}, { dedupe: Boolean(blockHash || blockNumberHex) });
-	if (!receipts) throw new BlockNotFoundError({
-		blockHash,
-		blockNumber
-	});
-	const format = client.chain?.formatters?.transactionReceipt?.format || formatTransactionReceipt;
-	return receipts.map((receipt) => format(receipt, "getBlockReceipts"));
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getBlockTransactionCount.js
-init_fromHex();
-init_toHex();
-/**
-* Returns the number of Transactions at a block number, hash, or tag.
-*
-* - Docs: https://viem.sh/docs/actions/public/getBlockTransactionCount
-* - JSON-RPC Methods:
-*   - Calls [`eth_getBlockTransactionCountByNumber`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getblocktransactioncountbynumber) for `blockNumber` & `blockTag`.
-*   - Calls [`eth_getBlockTransactionCountByHash`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getblocktransactioncountbyhash) for `blockHash`.
-*
-* @param client - Client to use
-* @param parameters - {@link GetBlockTransactionCountParameters}
-* @returns The block transaction count. {@link GetBlockTransactionCountReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getBlockTransactionCount } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const count = await getBlockTransactionCount(client)
-*/
-async function getBlockTransactionCount(client, { blockHash, blockNumber, blockTag = "latest" } = {}) {
-	const blockNumberHex = blockNumber !== void 0 ? numberToHex(blockNumber) : void 0;
-	let count;
-	if (blockHash) count = await client.request({
-		method: "eth_getBlockTransactionCountByHash",
-		params: [blockHash]
-	}, { dedupe: true });
-	else count = await client.request({
-		method: "eth_getBlockTransactionCountByNumber",
-		params: [blockNumberHex || blockTag]
-	}, { dedupe: Boolean(blockNumberHex) });
-	return hexToNumber$1(count);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getDelegation.js
-init_getAddress();
-init_size();
-init_slice();
-/**
-* Returns the address that an account has delegated to via EIP-7702.
-*
-* - Docs: https://viem.sh/docs/actions/public/getDelegation
-*
-* @param client - Client to use
-* @param parameters - {@link GetDelegationParameters}
-* @returns The delegated address, or undefined if not delegated. {@link GetDelegationReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getDelegation } from 'viem/actions'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const delegation = await getDelegation(client, {
-*   address: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e',
-* })
-*/
-async function getDelegation(client, { address, blockNumber, blockTag = "latest" }) {
-	const code = await getCode(client, {
-		address,
-		...blockNumber !== void 0 ? { blockNumber } : { blockTag }
-	});
-	if (!code) return void 0;
-	if (size$3(code) !== 23) return void 0;
-	if (!code.startsWith("0xef0100")) return void 0;
-	return getAddress(slice$2(code, 3, 23));
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/errors/eip712.js
-init_base();
-var Eip712DomainNotFoundError = class extends BaseError$2 {
-	constructor({ address }) {
-		super(`No EIP-712 domain found on contract "${address}".`, {
-			metaMessages: [
-				"Ensure that:",
-				`- The contract is deployed at the address "${address}".`,
-				"- `eip712Domain()` function exists on the contract.",
-				"- `eip712Domain()` function matches signature to ERC-5267 specification."
-			],
-			name: "Eip712DomainNotFoundError"
-		});
-	}
-};
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getEip712Domain.js
-/**
-* Reads the EIP-712 domain from a contract, based on the ERC-5267 specification.
-*
-* @param client - A {@link Client} instance.
-* @param parameters - The parameters of the action. {@link GetEip712DomainParameters}
-* @returns The EIP-712 domain, fields, and extensions. {@link GetEip712DomainReturnType}
-*
-* @example
-* ```ts
-* import { createPublicClient, http, getEip712Domain } from 'viem'
-* import { mainnet } from 'viem/chains'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-*
-* const domain = await getEip712Domain(client, {
-*   address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-* })
-* // {
-* //   domain: {
-* //     name: 'ExampleContract',
-* //     version: '1',
-* //     chainId: 1,
-* //     verifyingContract: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-* //   },
-* //   fields: '0x0f',
-* //   extensions: [],
-* // }
-* ```
-*/
-async function getEip712Domain(client, parameters) {
-	const { address, factory, factoryData } = parameters;
-	try {
-		const [fields, name, version, chainId, verifyingContract, salt, extensions] = await getAction(client, readContract, "readContract")({
-			abi,
-			address,
-			functionName: "eip712Domain",
-			factory,
-			factoryData
-		});
-		return {
-			domain: {
-				name,
-				version,
-				chainId: Number(chainId),
-				verifyingContract,
-				salt
-			},
-			extensions,
-			fields
-		};
-	} catch (e) {
-		const error = e;
-		if (error.name === "ContractFunctionExecutionError" && error.cause.name === "ContractFunctionZeroDataError") throw new Eip712DomainNotFoundError({ address });
-		throw error;
-	}
-}
-const abi = [{
-	inputs: [],
-	name: "eip712Domain",
-	outputs: [
-		{
-			name: "fields",
-			type: "bytes1"
-		},
-		{
-			name: "name",
-			type: "string"
-		},
-		{
-			name: "version",
-			type: "string"
-		},
-		{
-			name: "chainId",
-			type: "uint256"
-		},
-		{
-			name: "verifyingContract",
-			type: "address"
-		},
-		{
-			name: "salt",
-			type: "bytes32"
-		},
-		{
-			name: "extensions",
-			type: "uint256[]"
-		}
-	],
-	stateMutability: "view",
-	type: "function"
-}];
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/formatters/feeHistory.js
-function formatFeeHistory(feeHistory) {
-	return {
-		baseFeePerGas: feeHistory.baseFeePerGas.map((value) => BigInt(value)),
-		gasUsedRatio: feeHistory.gasUsedRatio,
-		oldestBlock: BigInt(feeHistory.oldestBlock),
-		reward: feeHistory.reward?.map((reward) => reward.map((value) => BigInt(value)))
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getFeeHistory.js
-init_toHex();
-/**
-* Returns a collection of historical gas information.
-*
-* - Docs: https://viem.sh/docs/actions/public/getFeeHistory
-* - JSON-RPC Methods: [`eth_feeHistory`](https://docs.alchemy.com/reference/eth-feehistory)
-*
-* @param client - Client to use
-* @param parameters - {@link GetFeeHistoryParameters}
-* @returns The gas estimate (in wei). {@link GetFeeHistoryReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getFeeHistory } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const feeHistory = await getFeeHistory(client, {
-*   blockCount: 4,
-*   rewardPercentiles: [25, 75],
-* })
-*/
-async function getFeeHistory(client, { blockCount, blockNumber, blockTag = "latest", rewardPercentiles }) {
-	const blockNumberHex = typeof blockNumber === "bigint" ? numberToHex(blockNumber) : void 0;
-	const feeHistory = await client.request({
-		method: "eth_feeHistory",
-		params: [
-			numberToHex(blockCount),
-			blockNumberHex || blockTag,
-			rewardPercentiles
-		]
-	}, { dedupe: Boolean(blockNumberHex) });
-	return formatFeeHistory(feeHistory);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getFilterLogs.js
-/**
-* Returns a list of event logs since the filter was created.
-*
-* - Docs: https://viem.sh/docs/actions/public/getFilterLogs
-* - JSON-RPC Methods: [`eth_getFilterLogs`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterlogs)
-*
-* `getFilterLogs` is only compatible with **event filters**.
-*
-* @param client - Client to use
-* @param parameters - {@link GetFilterLogsParameters}
-* @returns A list of event logs. {@link GetFilterLogsReturnType}
-*
-* @example
-* import { createPublicClient, http, parseAbiItem } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { createEventFilter, getFilterLogs } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const filter = await createEventFilter(client, {
-*   address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-*   event: parseAbiItem('event Transfer(address indexed, address indexed, uint256)'),
-* })
-* const logs = await getFilterLogs(client, { filter })
-*/
-async function getFilterLogs(_client, { filter }) {
-	const strict = filter.strict ?? false;
-	const formattedLogs = (await filter.request({
-		method: "eth_getFilterLogs",
-		params: [filter.id]
-	})).map((log) => formatLog(log));
-	if (!filter.abi) return formattedLogs;
-	return parseEventLogs({
-		abi: filter.abi,
-		logs: formattedLogs,
-		strict
-	});
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/formatters/proof.js
-init_fromHex();
-function formatStorageProof(storageProof) {
-	return storageProof.map((proof) => ({
-		...proof,
-		value: BigInt(proof.value)
-	}));
-}
-function formatProof(proof) {
-	return {
-		...proof,
-		balance: proof.balance ? BigInt(proof.balance) : void 0,
-		nonce: proof.nonce ? hexToNumber$1(proof.nonce) : void 0,
-		storageProof: proof.storageProof ? formatStorageProof(proof.storageProof) : void 0
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getProof.js
-init_formatBlockParameter();
-/**
-* Returns the account and storage values of the specified account including the Merkle-proof.
-*
-* - Docs: https://viem.sh/docs/actions/public/getProof
-* - JSON-RPC Methods:
-*   - Calls [`eth_getProof`](https://eips.ethereum.org/EIPS/eip-1186)
-*
-* @param client - Client to use
-* @param parameters - {@link GetProofParameters}
-* @returns Proof data. {@link GetProofReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getProof } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const block = await getProof(client, {
-*  address: '0x...',
-*  storageKeys: ['0x...'],
-* })
-*/
-async function getProof(client, { address, blockHash, blockNumber, blockTag = "latest", requireCanonical, storageKeys }) {
-	const block = formatBlockParameter({
-		blockHash,
-		blockNumber,
-		blockTag,
-		requireCanonical
-	});
-	const proof = await client.request({
-		method: "eth_getProof",
-		params: [
-			address,
-			storageKeys,
-			block
-		]
-	});
-	return formatProof(proof);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getRawTransaction.js
-init_transaction();
-/**
-* Returns the raw, serialized [Transaction](https://viem.sh/docs/glossary/terms#transaction) given a hash.
-*
-* - Docs: https://viem.sh/docs/actions/public/getRawTransaction
-* - JSON-RPC Methods: `eth_getRawTransactionByHash`
-*
-* @param client - Client to use
-* @param parameters - {@link GetRawTransactionParameters}
-* @returns The raw, serialized transaction. {@link GetRawTransactionReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getRawTransaction } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const rawTransaction = await getRawTransaction(client, {
-*   hash: '0x4ca7ee652d57678f26e887c149ab0735f41de37bcad58c9f6d3ed5824f15b74d',
-* })
-*/
-async function getRawTransaction(client, { hash }) {
-	const rawTransaction = await client.request({
-		method: "eth_getRawTransactionByHash",
-		params: [hash]
-	}, { dedupe: true });
-	if (!rawTransaction) throw new TransactionNotFoundError({ hash });
-	return rawTransaction;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getStorageAt.js
-init_formatBlockParameter();
-/**
-* Returns the value from a storage slot at a given address.
-*
-* - Docs: https://viem.sh/docs/contract/getStorageAt
-* - JSON-RPC Methods: [`eth_getStorageAt`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getstorageat)
-*
-* @param client - Client to use
-* @param parameters - {@link GetStorageAtParameters}
-* @returns The value of the storage slot. {@link GetStorageAtReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getStorageAt } from 'viem/contract'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const code = await getStorageAt(client, {
-*   address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
-*   slot: toHex(0),
-* })
-*/
-async function getStorageAt(client, { address, blockHash, blockNumber, blockTag = "latest", requireCanonical, slot }) {
-	const block = formatBlockParameter({
-		blockHash,
-		blockNumber,
-		blockTag,
-		requireCanonical
-	});
-	return await client.request({
-		method: "eth_getStorageAt",
-		params: [
-			address,
-			slot,
-			block
-		]
-	});
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getStorageValues.js
-init_formatBlockParameter();
-/**
-* Returns values from multiple storage slots for multiple adddresses at a given block.
-*
-* - Docs: https://viem.sh/docs/actions/public/getStorageValues
-* - JSON-RPC Methods: [`eth_getStorageValues`](https://github.com/ethereum/execution-apis/issues/752)
-*
-* @param client - Client to use
-* @param parameters - {@link GetStorageValuesParameters}
-* @returns The values of the requested storage slots. {@link GetStorageValuesReturnType}
-*
-* @example
-* import { createPublicClient, http, toHex } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getStorageValues } from 'viem/actions'
-*
-* const client = createPublicClient({ chain: mainnet, transport: http() })
-* const values = await getStorageValues(client, {
-*   requests: {
-*     '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2': [
-*       toHex(0, { size: 32 }),
-*       toHex(1, { size: 32 }),
-*     ],
-*   },
-* })
-*/
-async function getStorageValues(client, { blockHash, blockNumber, blockTag = "latest", requireCanonical, requests }) {
-	const block = formatBlockParameter({
-		blockHash,
-		blockNumber,
-		blockTag,
-		requireCanonical
-	});
-	return client.request({
-		method: "eth_getStorageValues",
-		params: [requests, block]
-	});
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/getTransactionConfirmations.js
-/**
-* Returns the number of blocks passed (confirmations) since the transaction was processed on a block.
-*
-* - Docs: https://viem.sh/docs/actions/public/getTransactionConfirmations
-* - Example: https://stackblitz.com/github/wevm/viem/tree/main/examples/transactions_fetching-transactions
-* - JSON-RPC Methods: [`eth_getTransactionConfirmations`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getTransactionConfirmations)
-*
-* @param client - Client to use
-* @param parameters - {@link GetTransactionConfirmationsParameters}
-* @returns The number of blocks passed since the transaction was processed. If confirmations is 0, then the Transaction has not been confirmed & processed yet. {@link GetTransactionConfirmationsReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { getTransactionConfirmations } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const confirmations = await getTransactionConfirmations(client, {
-*   hash: '0x4ca7ee652d57678f26e887c149ab0735f41de37bcad58c9f6d3ed5824f15b74d',
-* })
-*/
-async function getTransactionConfirmations(client, { hash, transactionReceipt }) {
-	const [blockNumber, transaction] = await Promise.all([getAction(client, getBlockNumber, "getBlockNumber")({}), hash ? getAction(client, getTransaction, "getTransaction")({ hash }) : void 0]);
-	const transactionBlockNumber = transactionReceipt?.blockNumber || transaction?.blockNumber;
-	if (!transactionBlockNumber) return 0n;
-	return blockNumber - transactionBlockNumber + 1n;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/multicall.js
-init_abis();
-init_contracts();
-init_abi();
-init_base();
-init_contract$1();
-init_decodeFunctionResult();
-init_encodeFunctionData();
-init_getChainContractAddress();
-init_createBatchScheduler();
-init_stringify();
-/**
-* Similar to [`readContract`](https://viem.sh/docs/contract/readContract), but batches up multiple functions on a contract in a single RPC call via the [`multicall3` contract](https://github.com/mds1/multicall).
-*
-* - Docs: https://viem.sh/docs/contract/multicall
-*
-* @param client - Client to use
-* @param parameters - {@link MulticallParameters}
-* @returns An array of results with accompanying status. {@link MulticallReturnType}
-*
-* @example
-* import { createPublicClient, http, parseAbi } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { multicall } from 'viem/contract'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const abi = parseAbi([
-*   'function balanceOf(address) view returns (uint256)',
-*   'function totalSupply() view returns (uint256)',
-* ])
-* const results = await multicall(client, {
-*   contracts: [
-*     {
-*       address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
-*       abi,
-*       functionName: 'balanceOf',
-*       args: ['0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'],
-*     },
-*     {
-*       address: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2',
-*       abi,
-*       functionName: 'totalSupply',
-*     },
-*   ],
-* })
-* // [{ result: 424122n, status: 'success' }, { result: 1000000n, status: 'success' }]
-*/
-async function multicall(client, parameters) {
-	const { account, authorizationList, allowFailure = true, blockHash, blockNumber, blockOverrides, blockTag, requireCanonical, stateOverride } = parameters;
-	const contracts = parameters.contracts;
-	const batch = typeof client.batch?.multicall === "object" ? client.batch.multicall : {};
-	const batchSize = parameters.batchSize ?? batch.batchSize ?? 1024;
-	const deployless = parameters.deployless ?? batch.deployless ?? false;
-	const multicallAddress = (() => {
-		if (parameters.multicallAddress) return parameters.multicallAddress;
-		if (deployless) return null;
-		if (client.chain) return getChainContractAddress({
-			blockNumber,
-			chain: client.chain,
-			contract: "multicall3"
-		});
-		throw new Error("client chain not configured. multicallAddress is required.");
-	})();
-	const chunkedCalls = [[]];
-	let currentChunk = 0;
-	let currentChunkSize = 0;
-	for (let i = 0; i < contracts.length; i++) {
-		const { abi, address, args, functionName } = contracts[i];
-		try {
-			const callData = encodeFunctionData({
-				abi,
-				args,
-				functionName
-			});
-			currentChunkSize += (callData.length - 2) / 2;
-			if (batchSize > 0 && currentChunkSize > batchSize && chunkedCalls[currentChunk].length > 0) {
-				currentChunk++;
-				currentChunkSize = (callData.length - 2) / 2;
-				chunkedCalls[currentChunk] = [];
-			}
-			chunkedCalls[currentChunk] = [...chunkedCalls[currentChunk], {
-				allowFailure: true,
-				callData,
-				target: address
-			}];
-		} catch (err) {
-			const error = getContractError(err, {
-				abi,
-				address,
-				args,
-				docsPath: "/docs/contract/multicall",
-				functionName,
-				sender: account
-			});
-			if (!allowFailure) throw error;
-			chunkedCalls[currentChunk] = [...chunkedCalls[currentChunk], {
-				allowFailure: true,
-				callData: "0x",
-				target: address
-			}];
-		}
-	}
-	const batching = Boolean(client.batch?.multicall);
-	const batches = batching ? chunkedCalls.flatMap((calls) => calls.map((call) => [call])) : chunkedCalls;
-	const aggregate3Results = await Promise.allSettled(batches.map((calls) => {
-		if (batching) return scheduleMulticall(client, {
-			account,
-			authorizationList,
-			batchSize,
-			blockHash,
-			blockNumber,
-			blockOverrides,
-			blockTag,
-			call: calls[0],
-			multicallAddress,
-			requireCanonical,
-			stateOverride
-		}).then((result) => [result]);
-		return getAction(client, readContract, "readContract")({
-			...multicallAddress === null ? { code: multicall3Bytecode } : { address: multicallAddress },
-			abi: multicall3Abi,
-			account,
-			args: [calls],
-			authorizationList,
-			blockHash,
-			blockNumber,
-			blockOverrides,
-			blockTag,
-			functionName: "aggregate3",
-			requireCanonical,
-			stateOverride
-		});
-	}));
-	const results = [];
-	for (let i = 0; i < aggregate3Results.length; i++) {
-		const result = aggregate3Results[i];
-		if (result.status === "rejected") {
-			if (!allowFailure) throw result.reason;
-			for (let j = 0; j < batches[i].length; j++) results.push({
-				status: "failure",
-				error: result.reason,
-				result: void 0
-			});
-			continue;
-		}
-		const aggregate3Result = result.value;
-		for (let j = 0; j < aggregate3Result.length; j++) {
-			const { returnData, success } = aggregate3Result[j];
-			const { callData } = batches[i][j];
-			const { abi, address, functionName, args } = contracts[results.length];
-			try {
-				if (callData === "0x") throw new AbiDecodingZeroDataError();
-				if (!success) throw new RawContractError({ data: returnData });
-				const result = decodeFunctionResult({
-					abi,
-					args,
-					data: returnData,
-					functionName
-				});
-				results.push(allowFailure ? {
-					result,
-					status: "success"
-				} : result);
-			} catch (err) {
-				const error = getContractError(err, {
-					abi,
-					address,
-					args,
-					docsPath: "/docs/contract/multicall",
-					functionName
-				});
-				if (!allowFailure) throw error;
-				results.push({
-					error,
-					result: void 0,
-					status: "failure"
-				});
-			}
-		}
-	}
-	if (results.length !== contracts.length) throw new BaseError$2("multicall results mismatch");
-	return results;
-}
-async function scheduleMulticall(client, parameters) {
-	const { batchSize, call, multicallAddress, ...rest } = parameters;
-	const { wait = 0 } = typeof client.batch?.multicall === "object" ? client.batch.multicall : {};
-	const { schedule } = createBatchScheduler({
-		id: stringify$1([
-			"multicall",
-			client.uid,
-			batchSize,
-			multicallAddress,
-			rest
-		]),
-		wait,
-		shouldSplitBatch(calls) {
-			if (batchSize === 0) return false;
-			return calls.reduce((size, { callData }) => size + (callData.length - 2) / 2, 0) > batchSize;
-		},
-		fn: (calls) => getAction(client, readContract, "readContract")({
-			...multicallAddress === null ? { code: multicall3Bytecode } : { address: multicallAddress },
-			...rest,
-			abi: multicall3Abi,
-			args: [calls],
-			functionName: "aggregate3"
-		})
-	});
-	const [result] = await schedule(call);
-	return result;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/simulateBlocks.js
-init_BlockOverrides();
-init_parseAccount();
-init_abi();
-init_contract$1();
-init_node();
-init_decodeFunctionResult();
-init_encodeFunctionData();
-init_concat();
-init_toHex();
-init_getNodeError();
-init_transactionRequest();
-init_stateOverride();
-init_assertRequest();
-/**
-* Simulates a set of calls on block(s) with optional block and state overrides.
-*
-* @example
-* ```ts
-* import { createClient, http, parseEther } from 'viem'
-* import { simulate } from 'viem/actions'
-* import { mainnet } from 'viem/chains'
-*
-* const client = createClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-*
-* const result = await simulate(client, {
-*   blocks: [{
-*     blockOverrides: {
-*       number: 69420n,
-*     },
-*     calls: [{
-*       {
-*         account: '0x5a0b54d5dc17e482fe8b0bdca5320161b95fb929',
-*         data: '0xdeadbeef',
-*         to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-*       },
-*       {
-*         account: '0x5a0b54d5dc17e482fe8b0bdca5320161b95fb929',
-*         to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-*         value: parseEther('1'),
-*       },
-*     }],
-*     stateOverrides: [{
-*       address: '0x5a0b54d5dc17e482fe8b0bdca5320161b95fb929',
-*       balance: parseEther('10'),
-*     }],
-*   }]
-* })
-* ```
-*
-* @param client - Client to use.
-* @param parameters - {@link SimulateBlocksParameters}
-* @returns Simulated blocks. {@link SimulateBlocksReturnType}
-*/
-async function simulateBlocks(client, parameters) {
-	const { blockNumber, blockTag = client.experimental_blockTag ?? "latest", blocks, returnFullTransactions, traceTransfers, validation } = parameters;
-	try {
-		const blockStateCalls = [];
-		for (const block of blocks) {
-			const blockOverrides = block.blockOverrides ? toRpc(block.blockOverrides) : void 0;
-			const calls = block.calls.map((call_) => {
-				const call = call_;
-				const account = call.account ? parseAccount(call.account) : void 0;
-				const data = call.abi ? encodeFunctionData(call) : call.data;
-				const request = {
-					...call,
-					account,
-					data: call.dataSuffix ? concat$1([data || "0x", call.dataSuffix]) : data,
-					from: call.from ?? account?.address
-				};
-				assertRequest(request);
-				return formatTransactionRequest(request);
-			});
-			const stateOverrides = block.stateOverrides ? serializeStateOverride(block.stateOverrides) : void 0;
-			blockStateCalls.push({
-				blockOverrides,
-				calls,
-				stateOverrides
-			});
-		}
-		const block = (typeof blockNumber === "bigint" ? numberToHex(blockNumber) : void 0) || blockTag;
-		return (await client.request({
-			method: "eth_simulateV1",
-			params: [{
-				blockStateCalls,
-				returnFullTransactions,
-				traceTransfers,
-				validation
-			}, block]
-		})).map((block, i) => ({
-			...formatBlock(block),
-			calls: block.calls.map((call, j) => {
-				const { abi, args, functionName, to } = blocks[i].calls[j];
-				const data = call.error?.data ?? call.returnData;
-				const gasUsed = BigInt(call.gasUsed);
-				const maxUsedGas = call.maxUsedGas === void 0 ? void 0 : BigInt(call.maxUsedGas);
-				const logs = call.logs?.map((log) => formatLog(log));
-				const status = call.status === "0x1" ? "success" : "failure";
-				const result = abi && status === "success" && data !== "0x" ? decodeFunctionResult({
-					abi,
-					data,
-					functionName
-				}) : null;
-				const error = (() => {
-					if (status === "success") return void 0;
-					let error;
-					if (data === "0x") error = new AbiDecodingZeroDataError();
-					else if (data) error = new RawContractError({ data });
-					if (!error) return void 0;
-					return getContractError(error, {
-						abi: abi ?? [],
-						address: to ?? "0x",
-						args,
-						functionName: functionName ?? "<unknown>"
-					});
-				})();
-				return {
-					data,
-					gasUsed,
-					logs,
-					...maxUsedGas === void 0 ? {} : { maxUsedGas },
-					status,
-					...status === "success" ? { result } : { error }
-				};
-			})
-		}));
-	} catch (e) {
-		const cause = e;
-		const error = getNodeError(cause, {});
-		if (error instanceof UnknownNodeError) throw cause;
-		throw error;
-	}
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/ox@0.14.45_typescript@5.8.3_zod@4.6.5/node_modules/ox/_esm/core/AbiConstructor.js
-init_Hex();
-function encode(...parameters) {
-	const [abiConstructor, options] = (() => {
-		if (Array.isArray(parameters[0])) {
-			const [abi, options] = parameters;
-			return [fromAbi$1(abi), options];
-		}
-		return parameters;
-	})();
-	const { bytecode, args } = options;
-	return concat(bytecode, abiConstructor.inputs?.length && args?.length ? encode$2(abiConstructor.inputs, args) : "0x");
-}
-/** @internal */
-function from$1(abiConstructor) {
-	return from$4(abiConstructor);
-}
-/** @internal */
-function fromAbi$1(abi) {
-	const item = abi.find((item) => item.type === "constructor");
-	if (!item) throw new NotFoundError({ name: "constructor" });
-	return item;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/ox@0.14.45_typescript@5.8.3_zod@4.6.5/node_modules/ox/_esm/core/AbiFunction.js
-init_Hex();
-function decodeResult(...parameters) {
-	const [abiFunction, data, options = {}] = (() => {
-		if (Array.isArray(parameters[0])) {
-			const [abi, name, data, options] = parameters;
-			return [
-				fromAbi(abi, name),
-				data,
-				options
-			];
-		}
-		return parameters;
-	})();
-	const values = decode$1(abiFunction.outputs, data, options);
-	if (values && Object.keys(values).length === 0) return void 0;
-	if (values && Object.keys(values).length === 1) {
-		if (Array.isArray(values)) return values[0];
-		return Object.values(values)[0];
-	}
-	return values;
-}
-function encodeData(...parameters) {
-	const [abiFunction, args = []] = (() => {
-		if (Array.isArray(parameters[0])) {
-			const [abi, name, args] = parameters;
-			return [fromAbi(abi, name, { args }), args];
-		}
-		const [abiFunction, args] = parameters;
-		return [abiFunction, args];
-	})();
-	const { overloads } = abiFunction;
-	const item = overloads ? fromAbi([abiFunction, ...overloads], abiFunction.name, { args }) : abiFunction;
-	const selector = getSelector(item);
-	const data = args.length > 0 ? encode$2(item.inputs, args) : void 0;
-	return data ? concat(selector, data) : selector;
-}
-/**
-* Parses an arbitrary **JSON ABI Function** or **Human Readable ABI Function** into a typed {@link ox#AbiFunction.AbiFunction}.
-*
-* @example
-* ### JSON ABIs
-*
-* ```ts twoslash
-* import { AbiFunction } from 'ox'
-*
-* const approve = AbiFunction.from({
-*   type: 'function',
-*   name: 'approve',
-*   stateMutability: 'nonpayable',
-*   inputs: [
-*     {
-*       name: 'spender',
-*       type: 'address',
-*     },
-*     {
-*       name: 'amount',
-*       type: 'uint256',
-*     },
-*   ],
-*   outputs: [{ type: 'bool' }],
-* })
-*
-* approve
-* //^?
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-* ```
-*
-* @example
-* ### Human Readable ABIs
-*
-* A Human Readable ABI can be parsed into a typed ABI object:
-*
-* ```ts twoslash
-* import { AbiFunction } from 'ox'
-*
-* const approve = AbiFunction.from(
-*   'function approve(address spender, uint256 amount) returns (bool)' // [!code hl]
-* )
-*
-* approve
-* //^?
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-* ```
-*
-* @example
-* It is possible to specify `struct`s along with your definitions:
-*
-* ```ts twoslash
-* import { AbiFunction } from 'ox'
-*
-* const approve = AbiFunction.from([
-*   'struct Foo { address spender; uint256 amount; }', // [!code hl]
-*   'function approve(Foo foo) returns (bool)',
-* ])
-*
-* approve
-* //^?
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-* ```
-*
-*
-*
-* @param abiFunction - The ABI Function to parse.
-* @returns Typed ABI Function.
-*/
-function from(abiFunction, options = {}) {
-	return from$4(abiFunction, options);
-}
-/**
-* Extracts an {@link ox#AbiFunction.AbiFunction} from an {@link ox#Abi.Abi} given a name and optional arguments.
-*
-* @example
-* ### Extracting by Name
-*
-* ABI Functions can be extracted by their name using the `name` option:
-*
-* ```ts twoslash
-* import { Abi, AbiFunction } from 'ox'
-*
-* const abi = Abi.from([
-*   'function foo()',
-*   'event Transfer(address owner, address to, uint256 tokenId)',
-*   'function bar(string a) returns (uint256 x)',
-* ])
-*
-* const item = AbiFunction.fromAbi(abi, 'foo') // [!code focus]
-* //    ^?
-*
-*
-*
-*
-*
-*
-* ```
-*
-* @example
-* ### Extracting by Selector
-*
-* ABI Functions can be extract by their selector when {@link ox#Hex.Hex} is provided to `name`.
-*
-* ```ts twoslash
-* import { Abi, AbiFunction } from 'ox'
-*
-* const abi = Abi.from([
-*   'function foo()',
-*   'event Transfer(address owner, address to, uint256 tokenId)',
-*   'function bar(string a) returns (uint256 x)',
-* ])
-* const item = AbiFunction.fromAbi(abi, '0x095ea7b3') // [!code focus]
-* //    ^?
-*
-*
-*
-*
-*
-*
-*
-*
-*
-* ```
-*
-* :::note
-*
-* Extracting via a hex selector is useful when extracting an ABI Function from an `eth_call` RPC response or
-* from a Transaction `input`.
-*
-* :::
-*
-* @param abi - The ABI to extract from.
-* @param name - The name (or selector) of the ABI item to extract.
-* @param options - Extraction options.
-* @returns The ABI item.
-*/
-function fromAbi(abi, name, options) {
-	const item = fromAbi$2(abi, name, options);
-	if (item.type !== "function") throw new NotFoundError({
-		name,
-		type: "function"
-	});
-	return item;
-}
-/**
-* Computes the [4-byte selector](https://solidity-by-example.org/function-selector/) for an {@link ox#AbiFunction.AbiFunction}.
-*
-* Useful for computing function selectors for calldata.
-*
-* @example
-* ```ts twoslash
-* import { AbiFunction } from 'ox'
-*
-* const selector = AbiFunction.getSelector('function ownerOf(uint256 tokenId)')
-* // @log: '0x6352211e'
-* ```
-*
-* @example
-* ```ts twoslash
-* import { AbiFunction } from 'ox'
-*
-* const selector = AbiFunction.getSelector({
-*   inputs: [{ type: 'uint256' }],
-*   name: 'ownerOf',
-*   outputs: [],
-*   stateMutability: 'view',
-*   type: 'function'
-* })
-* // @log: '0x6352211e'
-* ```
-*
-* @param abiItem - The ABI item to compute the selector for.
-* @returns The first 4 bytes of the {@link ox#Hash.(keccak256:function)} hash of the function signature.
-*/
-function getSelector(abiItem) {
-	return getSelector$2(abiItem);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/constants/address.js
-const ethAddress = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-const zeroAddress = "0x0000000000000000000000000000000000000000";
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/simulateCalls.js
-init_parseAccount();
-init_contracts();
-init_base();
-init_contract$1();
-init_node();
-init_pad();
-init_fromHex();
-init_call();
-const getBalanceCode = "0x6080604052348015600e575f80fd5b5061016d8061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c8063f8b2cb4f1461002d575b5f80fd5b610047600480360381019061004291906100db565b61005d565b604051610054919061011e565b60405180910390f35b5f8173ffffffffffffffffffffffffffffffffffffffff16319050919050565b5f80fd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f6100aa82610081565b9050919050565b6100ba816100a0565b81146100c4575f80fd5b50565b5f813590506100d5816100b1565b92915050565b5f602082840312156100f0576100ef61007d565b5b5f6100fd848285016100c7565b91505092915050565b5f819050919050565b61011881610106565b82525050565b5f6020820190506101315f83018461010f565b9291505056fea26469706673582212203b9fe929fe995c7cf9887f0bdba8a36dd78e8b73f149b17d2d9ad7cd09d2dc6264736f6c634300081a0033";
-const staticCallCode = "0x608060405234801561000f575f5ffd5b5060043610610029575f3560e01c8063fd00430c1461002d575b5f5ffd5b6100476004803603810190610042919061012b565b610049565b005b80825f375f5f825f865afa610060573d5f5f3e3d5ffd5b3d5f5f3e3d5ff35b5f5ffd5b5f5ffd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f61009982610070565b9050919050565b6100a98161008f565b81146100b3575f5ffd5b50565b5f813590506100c4816100a0565b92915050565b5f5ffd5b5f5ffd5b5f5ffd5b5f5f83601f8401126100eb576100ea6100ca565b5b8235905067ffffffffffffffff811115610108576101076100ce565b5b602083019150836001820283011115610124576101236100d2565b5b9250929050565b5f5f5f6040848603121561014257610141610068565b5b5f61014f868287016100b6565b935050602084013567ffffffffffffffff8111156101705761016f61006c565b5b61017c868287016100d6565b9250925050925092509256fea2646970667358221220635ed99185cacf3f2acba6921f23687c969cec2bbaf5f9ad599f507e6e105e6964736f6c63430008230033";
-const assetProbeGas = 1000000n;
-const staticCallAddressBase = 3735928559n;
-const transferEventSelector = getSelector$1(from$3("event Transfer(address indexed from, address indexed to, uint256 value)"));
-const balanceOfFunction = from("function balanceOf(address) returns (uint256)");
-const decimalsFunction = from("function decimals() returns (uint256)");
-const tokenUriFunction = from("function tokenURI(uint256) returns (string)");
-const symbolFunction = from("function symbol() returns (string)");
-const staticCallFunction = from("function query(address target, bytes data)");
-/**
-* Simulates execution of a batch of calls.
-*
-* @param client - Client to use
-* @param parameters - {@link SimulateCallsParameters}
-* @returns Results. {@link SimulateCallsReturnType}
-*
-* @example
-* ```ts
-* import { createPublicClient, http, parseEther } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { simulateCalls } from 'viem/actions'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-*
-* const result = await simulateCalls(client, {
-*   account: '0x5a0b54d5dc17e482fe8b0bdca5320161b95fb929',
-*   calls: [{
-*     {
-*       data: '0xdeadbeef',
-*       to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-*     },
-*     {
-*       to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-*       value: parseEther('1'),
-*     },
-*   ]
-* })
-* ```
-*/
-async function simulateCalls(client, parameters) {
-	const { blockNumber, blockTag, calls, stateOverrides, traceAssetChanges, traceTransfers, validation } = parameters;
-	const account = parameters.account ? parseAccount(parameters.account) : void 0;
-	if (traceAssetChanges && !account) throw new BaseError$2("`account` is required when `traceAssetChanges` is true");
-	const getBalanceData = account ? encode(from$1("constructor(bytes, bytes)"), {
-		bytecode: deploylessCallViaBytecodeBytecode,
-		args: [getBalanceCode, encodeData(from("function getBalance(address)"), [account.address])]
-	}) : void 0;
-	const blockTag_ = blockTag ?? client.experimental_blockTag ?? "latest";
-	let baseBlockNumber = blockNumber;
-	if (traceAssetChanges && typeof baseBlockNumber !== "bigint" && blockTag_ !== "earliest" && blockTag_ !== "pending") {
-		if (blockTag_ === "latest") baseBlockNumber = await getBlockNumber(client, { cacheTime: 0 });
-		else {
-			const block = await getBlock(client, { blockTag: blockTag_ });
-			if (typeof block.number !== "bigint") throw new BaseError$2(`Block tag \`${blockTag_}\` did not resolve to a number.`);
-			baseBlockNumber = block.number;
-		}
-	}
-	const block_ = typeof baseBlockNumber === "bigint" ? { blockNumber: baseBlockNumber } : { blockTag: blockTag_ };
-	const discovery = traceAssetChanges ? await simulateBlocks(client, {
-		...block_,
-		blocks: [{
-			calls: calls.map((call) => ({
-				...call,
-				from: account.address
-			})),
-			stateOverrides
-		}],
-		traceTransfers,
-		validation
-	}) : void 0;
-	const assetAddresses = discovery ? [.../* @__PURE__ */ new Set([...tokensFromLogs(discovery[0].calls.flatMap((call) => call.logs ?? []), account.address), ...parameters.calls.map((call) => call.to?.toLowerCase())])].filter((address) => Boolean(address) && address !== "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" && address !== "0x0000000000000000000000000000000000000000") : [];
-	const staticCallAddress = getStaticCallAddress([
-		...account ? [account.address] : [],
-		...assetAddresses,
-		...stateOverrides?.map(({ address }) => address) ?? []
-	]);
-	const staticCallStateOverrides = [{
-		address: staticCallAddress,
-		code: staticCallCode
-	}];
-	const [balanceCallsPre, blocks] = await Promise.all([traceAssetChanges ? Promise.all([readBalance(client, {
-		account: account.address,
-		...block_,
-		data: getBalanceData,
-		stateOverride: stateOverrides
-	}), ...assetAddresses.map((address) => readBalance(client, {
-		account: account.address,
-		address,
-		...block_,
-		data: encodeData(balanceOfFunction, [account.address]),
-		staticCallAddress,
-		stateOverride: stateOverrides
-	}))]) : [], simulateBlocks(client, {
-		...block_,
-		blocks: [{
-			calls: [...calls, { to: zeroAddress }].map((call) => ({
-				...call,
-				from: account?.address
-			})),
-			stateOverrides
-		}, ...traceAssetChanges ? [
-			{ calls: [{ data: getBalanceData }] },
-			{
-				calls: assetAddresses.map((address) => ({
-					to: staticCallAddress,
-					gas: assetProbeGas,
-					data: encodeStaticCall(address, encodeData(balanceOfFunction, [account.address]))
-				})),
-				stateOverrides: staticCallStateOverrides
-			},
-			{
-				calls: assetAddresses.map((address) => ({
-					to: staticCallAddress,
-					gas: assetProbeGas,
-					data: encodeStaticCall(address, encodeData(decimalsFunction))
-				})),
-				stateOverrides: staticCallStateOverrides
-			},
-			{
-				calls: assetAddresses.map((address) => ({
-					to: staticCallAddress,
-					gas: assetProbeGas,
-					data: encodeStaticCall(address, encodeData(tokenUriFunction, [0n]))
-				})),
-				stateOverrides: staticCallStateOverrides
-			},
-			{
-				calls: assetAddresses.map((address) => ({
-					to: staticCallAddress,
-					gas: assetProbeGas,
-					data: encodeStaticCall(address, encodeData(symbolFunction))
-				})),
-				stateOverrides: staticCallStateOverrides
-			}
-		] : []],
-		traceTransfers,
-		validation
-	})]);
-	const block_results = blocks[0];
-	const [block_ethPost, block_assetsPost, block_decimals, block_tokenURI, block_symbols] = traceAssetChanges ? blocks.slice(1) : [];
-	const { calls: block_calls, ...block } = block_results;
-	const results = block_calls.slice(0, -1);
-	const balancesPre = balanceCallsPre.map((call) => isBalance(call) ? hexToBigInt(call.data) : null);
-	const ethPost = block_ethPost?.calls ?? [];
-	const assetsPost = block_assetsPost?.calls ?? [];
-	const balancesPost = [...ethPost, ...assetsPost].map((call) => isBalance(call) ? hexToBigInt(call.data) : null);
-	const decimals = (block_decimals?.calls ?? []).map((call) => decodeAssetResult(call, decimalsFunction));
-	const symbols = (block_symbols?.calls ?? []).map((call) => decodeAssetResult(call, symbolFunction));
-	const tokenURI = (block_tokenURI?.calls ?? []).map((call) => decodeAssetResult(call, tokenUriFunction));
-	const changes = [];
-	for (const [i, balancePost] of balancesPost.entries()) {
-		const balancePre_ = balancesPre[i];
-		const preCall = balanceCallsPre[i];
-		const balancePre = typeof balancePre_ === "bigint" ? balancePre_ : i > 0 && preCall?.status === "success" && preCall.data === "0x" ? 0n : null;
-		if (typeof balancePost !== "bigint") continue;
-		if (typeof balancePre !== "bigint") continue;
-		const decimals_ = decimals[i - 1];
-		const symbol_ = symbols[i - 1];
-		const tokenURI_ = tokenURI[i - 1];
-		const token = (() => {
-			if (i === 0) return {
-				address: ethAddress,
-				decimals: 18,
-				symbol: "ETH"
-			};
-			return {
-				address: assetAddresses[i - 1],
-				decimals: tokenURI_ || decimals_ ? Number(decimals_ ?? 1) : void 0,
-				symbol: symbol_ ?? void 0
-			};
-		})();
-		changes.push({
-			token,
-			value: {
-				pre: balancePre,
-				post: balancePost,
-				diff: balancePost - balancePre
-			}
-		});
-	}
-	return {
-		assetChanges: changes,
-		block,
-		results
-	};
-}
-function encodeStaticCall(address, data) {
-	return encodeData(staticCallFunction, [address, data]);
-}
-function tokensFromLogs(logs, account) {
-	const account_ = pad$2(account.toLowerCase(), { size: 32 });
-	return logs.filter((log) => {
-		if (log.topics[0]?.toLowerCase() !== transferEventSelector) return false;
-		if (log.address.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") return false;
-		return log.topics[1]?.toLowerCase() === account_ || log.topics[2]?.toLowerCase() === account_;
-	}).map((log) => log.address.toLowerCase());
-}
-function isBalance(call) {
-	return call.status === "success" && /^0x[\da-f]{64}$/i.test(call.data);
-}
-function decodeAssetResult(call, abiFunction) {
-	if (call.status === "failure" || call.data === "0x") return null;
-	try {
-		return decodeResult(abiFunction, call.data);
-	} catch {
-		return null;
-	}
-}
-async function readBalance(client, parameters) {
-	const { account, address, blockNumber, blockTag, data, staticCallAddress, stateOverride } = parameters;
-	try {
-		return {
-			data: (await call({
-				...client,
-				ccipRead: false
-			}, {
-				account: address ? "0x0000000000000000000000000000000000000000" : account,
-				data: address ? encodeStaticCall(address, data) : data,
-				stateOverride: address && staticCallAddress ? [...stateOverride ?? [], {
-					address: staticCallAddress,
-					code: staticCallCode
-				}] : stateOverride,
-				...address ? {
-					gas: assetProbeGas,
-					to: staticCallAddress
-				} : {},
-				...typeof blockNumber === "bigint" ? { blockNumber } : { blockTag }
-			})).data ?? "0x",
-			status: "success"
-		};
-	} catch (error) {
-		if (!(error instanceof CallExecutionError) || !(error.cause instanceof ExecutionRevertedError)) throw error;
-		return {
-			data: "0x",
-			status: "failure"
-		};
-	}
-}
-function getStaticCallAddress(addresses) {
-	const occupied = new Set(addresses.map((address) => address.toLowerCase()));
-	let value = staticCallAddressBase;
-	while (occupied.has(`0x${value.toString(16).padStart(40, "0")}`)) value++;
-	return `0x${value.toString(16).padStart(40, "0")}`;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/verifyMessage.js
-/**
-* Verify that a message was signed by the provided address.
-*
-* Compatible with Smart Contract Accounts & Externally Owned Accounts via [ERC-6492](https://eips.ethereum.org/EIPS/eip-6492).
-*
-* - Docs {@link https://viem.sh/docs/actions/public/verifyMessage}
-*
-* @param client - Client to use.
-* @param parameters - {@link VerifyMessageParameters}
-* @returns Whether or not the signature is valid. {@link VerifyMessageReturnType}
-*/
-async function verifyMessage(client, { address, message, factory, factoryData, signature, ...callRequest }) {
-	const hash = hashMessage(message);
-	return getAction(client, verifyHash, "verifyHash")({
-		address,
-		factory,
-		factoryData,
-		hash,
-		signature,
-		...callRequest
-	});
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/verifyTypedData.js
-/**
-* Verify that typed data was signed by the provided address.
-*
-* - Docs {@link https://viem.sh/docs/actions/public/verifyTypedData}
-*
-* @param client - Client to use.
-* @param parameters - {@link VerifyTypedDataParameters}
-* @returns Whether or not the signature is valid. {@link VerifyTypedDataReturnType}
-*/
-async function verifyTypedData(client, parameters) {
-	const { address, factory, factoryData, signature, message, primaryType, types, domain, ...callRequest } = parameters;
-	const hash = hashTypedData({
-		message,
-		primaryType,
-		types,
-		domain
-	});
-	return getAction(client, verifyHash, "verifyHash")({
-		address,
-		factory,
-		factoryData,
-		hash,
-		signature,
-		...callRequest
-	});
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/watchBlockHeaders.js
-init_stringify();
-const blockFields = [
-	"size",
-	"totalDifficulty",
-	"transactions",
-	"uncles",
-	"withdrawals"
-];
-/**
-* Watches and returns incoming block headers.
-*
-* - Docs: https://viem.sh/docs/actions/public/watchBlockHeaders
-* - JSON-RPC Methods: Uses a WebSocket or IPC subscription via [`eth_subscribe`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_subscribe) and the `"newHeads"` event.
-*
-* @param client - Client to use
-* @param parameters - {@link WatchBlockHeadersParameters}
-* @returns A function that can be invoked to stop watching for new block headers. {@link WatchBlockHeadersReturnType}
-*
-* @example
-* import { createPublicClient, webSocket } from 'viem'
-* import { watchBlockHeaders } from 'viem/actions'
-* import { mainnet } from 'viem/chains'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: webSocket(),
-* })
-* const unwatch = watchBlockHeaders(client, {
-*   onBlockHeader: (blockHeader) => console.log(blockHeader),
-* })
-*/
-function watchBlockHeaders(client, { onBlockHeader, onError }) {
-	let prevBlockHeader;
-	const observerId = stringify$1(["watchBlockHeaders", client.uid]);
-	return observe(observerId, {
-		onBlockHeader,
-		onError
-	}, (emit) => {
-		let active = true;
-		let subscribed = false;
-		let unsubscribe = () => active = false;
-		(async () => {
-			try {
-				const { unsubscribe: unsubscribe_ } = await (() => {
-					if (client.transport.type === "fallback") {
-						const transport = client.transport.transports.find((transport) => transport.config.type === "webSocket" || transport.config.type === "ipc");
-						if (!transport) return client.transport;
-						return transport.value;
-					}
-					return client.transport;
-				})().subscribe({
-					params: ["newHeads"],
-					onData(data) {
-						if (!active) return;
-						const blockHeader = (client.chain?.formatters?.block?.format || formatBlock)(data.result, "watchBlockHeaders");
-						for (const field of blockFields) delete blockHeader[field];
-						emit.onBlockHeader(blockHeader, prevBlockHeader);
-						prevBlockHeader = blockHeader;
-					},
-					onError(error) {
-						if (subscribed) emit.onError?.(error);
-					}
-				});
-				subscribed = true;
-				unsubscribe = unsubscribe_;
-				if (!active) unsubscribe();
-			} catch (err) {
-				emit.onError?.(err);
-			}
-		})();
-		return () => unsubscribe();
-	});
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/watchBlocks.js
-init_stringify();
-/**
-* Watches and returns information for incoming blocks.
-*
-* - Docs: https://viem.sh/docs/actions/public/watchBlocks
-* - Examples: https://stackblitz.com/github/wevm/viem/tree/main/examples/blocks_watching-blocks
-* - JSON-RPC Methods:
-*   - When `poll: true`, calls [`eth_getBlockByNumber`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getBlockByNumber) on a polling interval.
-*   - When `poll: false` & WebSocket Transport, uses a WebSocket subscription via [`eth_subscribe`](https://docs.alchemy.com/reference/eth-subscribe-polygon) and the `"newHeads"` event.
-*
-* @param client - Client to use
-* @param parameters - {@link WatchBlocksParameters}
-* @returns A function that can be invoked to stop watching for new block numbers. {@link WatchBlocksReturnType}
-*
-* @example
-* import { createPublicClient, watchBlocks, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const unwatch = watchBlocks(client, {
-*   onBlock: (block) => console.log(block),
-* })
-*/
-function watchBlocks(client, { blockTag = client.experimental_blockTag ?? "latest", emitMissed = false, emitOnBegin = false, onBlock, onError, includeTransactions: includeTransactions_, poll: poll_, pollingInterval = client.pollingInterval }) {
-	const enablePolling = (() => {
-		if (typeof poll_ !== "undefined") return poll_;
-		if (client.transport.type === "webSocket" || client.transport.type === "ipc") return false;
-		if (client.transport.type === "fallback" && (client.transport.transports[0].config.type === "webSocket" || client.transport.transports[0].config.type === "ipc")) return false;
-		return true;
-	})();
-	const includeTransactions = includeTransactions_ ?? false;
-	let prevBlock;
-	const pollBlocks = () => {
-		const observerId = stringify$1([
-			"watchBlocks",
-			client.uid,
-			blockTag,
-			emitMissed,
-			emitOnBegin,
-			includeTransactions,
-			pollingInterval
-		]);
-		return observe(observerId, {
-			onBlock,
-			onError
-		}, (emit) => poll(async () => {
-			try {
-				const block = await getAction(client, getBlock, "getBlock")({
-					blockTag,
-					includeTransactions
-				});
-				if (block.number !== null && prevBlock?.number != null) {
-					if (block.number === prevBlock.number) return;
-					if (block.number - prevBlock.number > 1 && emitMissed) for (let i = prevBlock?.number + 1n; i < block.number; i++) {
-						const block = await getAction(client, getBlock, "getBlock")({
-							blockNumber: i,
-							includeTransactions
-						});
-						emit.onBlock(block, prevBlock);
-						prevBlock = block;
-					}
-				}
-				if (prevBlock?.number == null || blockTag === "pending" && block?.number == null || block.number !== null && block.number > prevBlock.number) {
-					emit.onBlock(block, prevBlock);
-					prevBlock = block;
-				}
-			} catch (err) {
-				emit.onError?.(err);
-			}
-		}, {
-			emitOnBegin,
-			interval: pollingInterval
-		}));
-	};
-	const subscribeBlocks = () => {
-		let active = true;
-		let emitFetched = true;
-		let unsubscribe = () => active = false;
-		(async () => {
-			try {
-				if (emitOnBegin) getAction(client, getBlock, "getBlock")({
-					blockTag,
-					includeTransactions
-				}).then((block) => {
-					if (!active) return;
-					if (!emitFetched) return;
-					onBlock(block, void 0);
-					emitFetched = false;
-				}).catch(onError);
-				const { unsubscribe: unsubscribe_ } = await (() => {
-					if (client.transport.type === "fallback") {
-						const transport = client.transport.transports.find((transport) => transport.config.type === "webSocket" || transport.config.type === "ipc");
-						if (!transport) return client.transport;
-						return transport.value;
-					}
-					return client.transport;
-				})().subscribe({
-					params: ["newHeads"],
-					async onData(data) {
-						if (!active) return;
-						const block = await getAction(client, getBlock, "getBlock")({
-							blockNumber: data.result?.number,
-							includeTransactions
-						}).catch(() => {});
-						if (!active) return;
-						onBlock(block, prevBlock);
-						emitFetched = false;
-						prevBlock = block;
-					},
-					onError(error) {
-						onError?.(error);
-					}
-				});
-				unsubscribe = unsubscribe_;
-				if (!active) unsubscribe();
-			} catch (err) {
-				onError?.(err);
-			}
-		})();
-		return () => unsubscribe();
-	};
-	return enablePolling ? pollBlocks() : subscribeBlocks();
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/watchEvent.js
-init_abi();
-init_rpc();
-init_stringify();
-/**
-* Watches and returns emitted [Event Logs](https://viem.sh/docs/glossary/terms#event-log).
-*
-* - Docs: https://viem.sh/docs/actions/public/watchEvent
-* - JSON-RPC Methods:
-*   - **RPC Provider supports `eth_newFilter`:**
-*     - Calls [`eth_newFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newfilter) to create a filter (called on initialize).
-*     - On a polling interval, it will call [`eth_getFilterChanges`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterchanges).
-*   - **RPC Provider does not support `eth_newFilter`:**
-*     - Calls [`eth_getLogs`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getlogs) for each block between the polling interval.
-*
-* This Action will batch up all the Event Logs found within the [`pollingInterval`](https://viem.sh/docs/actions/public/watchEvent#pollinginterval-optional), and invoke them via [`onLogs`](https://viem.sh/docs/actions/public/watchEvent#onLogs).
-*
-* `watchEvent` will attempt to create an [Event Filter](https://viem.sh/docs/actions/public/createEventFilter) and listen to changes to the Filter per polling interval, however, if the RPC Provider does not support Filters (e.g. `eth_newFilter`), then `watchEvent` will fall back to using [`getLogs`](https://viem.sh/docs/actions/public/getLogs) instead.
-*
-* @param client - Client to use
-* @param parameters - {@link WatchEventParameters}
-* @returns A function that can be invoked to stop watching for new Event Logs. {@link WatchEventReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { watchEvent } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const unwatch = watchEvent(client, {
-*   onLogs: (logs) => console.log(logs),
-* })
-*/
-function watchEvent(client, { address, args, batch = true, event, events, fromBlock, onError, onLogs, poll: poll_, pollingInterval = client.pollingInterval, strict: strict_ }) {
-	const enablePolling = (() => {
-		if (typeof poll_ !== "undefined") return poll_;
-		if (typeof fromBlock === "bigint") return true;
-		if (client.transport.type === "webSocket" || client.transport.type === "ipc") return false;
-		if (client.transport.type === "fallback" && (client.transport.transports[0].config.type === "webSocket" || client.transport.transports[0].config.type === "ipc")) return false;
-		return true;
-	})();
-	const strict = strict_ ?? false;
-	const pollEvent = () => {
-		const observerId = stringify$1([
-			"watchEvent",
-			address,
-			args,
-			batch,
-			client.uid,
-			event,
-			pollingInterval,
-			fromBlock
-		]);
-		return observe(observerId, {
-			onLogs,
-			onError
-		}, (emit) => {
-			let previousBlockNumber;
-			if (fromBlock !== void 0) previousBlockNumber = fromBlock - 1n;
-			let filter;
-			let initialized = false;
-			const unwatch = poll(async () => {
-				if (!initialized) {
-					try {
-						filter = await getAction(client, createEventFilter, "createEventFilter")({
-							address,
-							args,
-							event,
-							events,
-							strict,
-							fromBlock
-						});
-					} catch {}
-					initialized = true;
-					return;
-				}
-				try {
-					let logs;
-					if (filter) logs = await getAction(client, getFilterChanges, "getFilterChanges")({ filter });
-					else {
-						const blockNumber = await getAction(client, getBlockNumber, "getBlockNumber")({});
-						if (previousBlockNumber && previousBlockNumber !== blockNumber) logs = await getAction(client, getLogs, "getLogs")({
-							address,
-							args,
-							event,
-							events,
-							fromBlock: previousBlockNumber + 1n,
-							toBlock: blockNumber
-						});
-						else logs = [];
-						previousBlockNumber = blockNumber;
-					}
-					if (logs.length === 0) return;
-					if (batch) emit.onLogs(logs);
-					else for (const log of logs) emit.onLogs([log]);
-				} catch (err) {
-					if (filter && err instanceof InvalidInputRpcError) initialized = false;
-					emit.onError?.(err);
-				}
-			}, {
-				emitOnBegin: true,
-				interval: pollingInterval
-			});
-			return async () => {
-				if (filter) await getAction(client, uninstallFilter, "uninstallFilter")({ filter });
-				unwatch();
-			};
-		});
-	};
-	const subscribeEvent = () => {
-		let active = true;
-		let unsubscribe = () => active = false;
-		(async () => {
-			try {
-				const transport = (() => {
-					if (client.transport.type === "fallback") {
-						const transport = client.transport.transports.find((transport) => transport.config.type === "webSocket" || transport.config.type === "ipc");
-						if (!transport) return client.transport;
-						return transport.value;
-					}
-					return client.transport;
-				})();
-				const events_ = events ?? (event ? [event] : void 0);
-				let topics = [];
-				if (events_) {
-					topics = [events_.flatMap((event) => encodeEventTopics({
-						abi: [event],
-						eventName: event.name,
-						args
-					}))];
-					if (event) topics = topics[0];
-				}
-				const { unsubscribe: unsubscribe_ } = await transport.subscribe({
-					params: ["logs", {
-						address,
-						topics
-					}],
-					onData(data) {
-						if (!active) return;
-						const log = data.result;
-						try {
-							const { eventName, args } = decodeEventLog({
-								abi: events_ ?? [],
-								data: log.data,
-								topics: log.topics,
-								strict
-							});
-							onLogs([formatLog(log, {
-								args,
-								eventName
-							})]);
-						} catch (err) {
-							let eventName;
-							let isUnnamed;
-							if (err instanceof DecodeLogDataMismatch || err instanceof DecodeLogTopicsMismatch) {
-								if (strict_) return;
-								eventName = err.abiItem.name;
-								isUnnamed = err.abiItem.inputs?.some((x) => !("name" in x && x.name));
-							}
-							onLogs([formatLog(log, {
-								args: isUnnamed ? [] : {},
-								eventName
-							})]);
-						}
-					},
-					onError(error) {
-						onError?.(error);
-					}
-				});
-				unsubscribe = unsubscribe_;
-				if (!active) unsubscribe();
-			} catch (err) {
-				onError?.(err);
-			}
-		})();
-		return () => unsubscribe();
-	};
-	return enablePolling ? pollEvent() : subscribeEvent();
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/public/watchPendingTransactions.js
-init_stringify();
-/**
-* Watches and returns pending transaction hashes.
-*
-* - Docs: https://viem.sh/docs/actions/public/watchPendingTransactions
-* - JSON-RPC Methods:
-*   - When `poll: true`
-*     - Calls [`eth_newPendingTransactionFilter`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_newpendingtransactionfilter) to initialize the filter.
-*     - Calls [`eth_getFilterChanges`](https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getFilterChanges) on a polling interval.
-*   - When `poll: false` & WebSocket Transport, uses a WebSocket subscription via [`eth_subscribe`](https://docs.alchemy.com/reference/eth-subscribe-polygon) and the `"newPendingTransactions"` event.
-*
-* This Action will batch up all the pending transactions found within the [`pollingInterval`](https://viem.sh/docs/actions/public/watchPendingTransactions#pollinginterval-optional), and invoke them via [`onTransactions`](https://viem.sh/docs/actions/public/watchPendingTransactions#ontransactions).
-*
-* @param client - Client to use
-* @param parameters - {@link WatchPendingTransactionsParameters}
-* @returns A function that can be invoked to stop watching for new pending transaction hashes. {@link WatchPendingTransactionsReturnType}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { watchPendingTransactions } from 'viem/public'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-* const unwatch = await watchPendingTransactions(client, {
-*   onTransactions: (hashes) => console.log(hashes),
-* })
-*/
-function watchPendingTransactions(client, { batch = true, onError, onTransactions, poll: poll_, pollingInterval = client.pollingInterval }) {
-	const enablePolling = typeof poll_ !== "undefined" ? poll_ : client.transport.type !== "webSocket" && client.transport.type !== "ipc";
-	const pollPendingTransactions = () => {
-		const observerId = stringify$1([
-			"watchPendingTransactions",
-			client.uid,
-			batch,
-			pollingInterval
-		]);
-		return observe(observerId, {
-			onTransactions,
-			onError
-		}, (emit) => {
-			let filter;
-			const unwatch = poll(async () => {
-				try {
-					if (!filter) try {
-						filter = await getAction(client, createPendingTransactionFilter, "createPendingTransactionFilter")({});
-						return;
-					} catch (err) {
-						unwatch();
-						throw err;
-					}
-					const hashes = await getAction(client, getFilterChanges, "getFilterChanges")({ filter });
-					if (hashes.length === 0) return;
-					if (batch) emit.onTransactions(hashes);
-					else for (const hash of hashes) emit.onTransactions([hash]);
-				} catch (err) {
-					emit.onError?.(err);
-				}
-			}, {
-				emitOnBegin: true,
-				interval: pollingInterval
-			});
-			return async () => {
-				if (filter) await getAction(client, uninstallFilter, "uninstallFilter")({ filter });
-				unwatch();
-			};
-		});
-	};
-	const subscribePendingTransactions = () => {
-		let active = true;
-		let unsubscribe = () => active = false;
-		(async () => {
-			try {
-				const { unsubscribe: unsubscribe_ } = await client.transport.subscribe({
-					params: ["newPendingTransactions"],
-					onData(data) {
-						if (!active) return;
-						const transaction = data.result;
-						onTransactions([transaction]);
-					},
-					onError(error) {
-						onError?.(error);
-					}
-				});
-				unsubscribe = unsubscribe_;
-				if (!active) unsubscribe();
-			} catch (err) {
-				onError?.(err);
-			}
-		})();
-		return () => unsubscribe();
-	};
-	return enablePolling ? pollPendingTransactions() : subscribePendingTransactions();
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/siwe/parseSiweMessage.js
-const siweDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
-function isValidSiweDateTime(value) {
-	if (!siweDateTimeRegex.test(value)) return false;
-	return !Number.isNaN(new Date(value).getTime());
-}
-function parseSiweDateTime(value) {
-	if (!isValidSiweDateTime(value)) return /* @__PURE__ */ new Date(NaN);
-	return new Date(value);
-}
-/**
-* @description Parses EIP-4361 formatted message into message fields object.
-*
-* @see https://eips.ethereum.org/EIPS/eip-4361
-*
-* @returns EIP-4361 fields object
-*/
-function parseSiweMessage(message) {
-	const { scheme, statement, ...prefix } = message.match(prefixRegex)?.groups ?? {};
-	const { chainId, expirationTime, issuedAt, notBefore, requestId, resources: resources_, ...suffix } = message.match(suffixRegex)?.groups ?? {};
-	const resources = resources_?.split("\n- ").slice(1);
-	return {
-		...prefix,
-		...suffix,
-		...chainId ? { chainId: Number(chainId) } : {},
-		...expirationTime ? { expirationTime: parseSiweDateTime(expirationTime) } : {},
-		...issuedAt ? { issuedAt: parseSiweDateTime(issuedAt) } : {},
-		...notBefore ? { notBefore: parseSiweDateTime(notBefore) } : {},
-		...requestId ? { requestId } : {},
-		...resources ? { resources } : {},
-		...scheme ? { scheme } : {},
-		...statement ? { statement } : {}
-	};
-}
-const prefixRegex = /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+\-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/;
-const suffixRegex = /(?:URI: (?<uri>.+))\n(?:Version: (?<version>.+))\n(?:Chain ID: (?<chainId>\d+))\n(?:Nonce: (?<nonce>[a-zA-Z0-9]+))\n(?:Issued At: (?<issuedAt>.+))(?:\nExpiration Time: (?<expirationTime>.+))?(?:\nNot Before: (?<notBefore>.+))?(?:\nRequest ID: (?<requestId>.*))?(?:\nResources:(?<resources>(?:\n- .+)*))?/;
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/utils/siwe/validateSiweMessage.js
-init_isAddress();
-init_isAddressEqual();
-/**
-* @description Validates EIP-4361 message.
-*
-* @see https://eips.ethereum.org/EIPS/eip-4361
-*/
-function validateSiweMessage(parameters) {
-	const { address, domain, message, nonce, scheme, time = /* @__PURE__ */ new Date() } = parameters;
-	if (domain && message.domain !== domain) return false;
-	if (nonce && message.nonce !== nonce) return false;
-	if (scheme && message.scheme !== scheme) return false;
-	if (Number.isNaN(time.getTime())) return false;
-	if (message.expirationTime) {
-		if (Number.isNaN(message.expirationTime.getTime())) return false;
-		if (time >= message.expirationTime) return false;
-	}
-	if (message.notBefore) {
-		if (Number.isNaN(message.notBefore.getTime())) return false;
-		if (time < message.notBefore) return false;
-	}
-	try {
-		if (!message.address) return false;
-		if (!isAddress(message.address, { strict: false })) return false;
-		if (address && !isAddressEqual(message.address, address)) return false;
-	} catch {
-		return false;
-	}
-	return true;
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/siwe/verifySiweMessage.js
-/**
-* Verifies [EIP-4361](https://eips.ethereum.org/EIPS/eip-4361) formatted message was signed.
-*
-* Compatible with Smart Contract Accounts & Externally Owned Accounts via [ERC-6492](https://eips.ethereum.org/EIPS/eip-6492).
-*
-* - Docs {@link https://viem.sh/docs/siwe/actions/verifySiweMessage}
-*
-* @param client - Client to use.
-* @param parameters - {@link VerifySiweMessageParameters}
-* @returns Whether or not the signature is valid. {@link VerifySiweMessageReturnType}
-*/
-async function verifySiweMessage(client, parameters) {
-	const { address, domain, message, nonce, scheme, signature, time = /* @__PURE__ */ new Date(), ...callRequest } = parameters;
-	const parsed = parseSiweMessage(message);
-	if (!parsed.address) return false;
-	if (!validateSiweMessage({
-		address,
-		domain,
-		message: parsed,
-		nonce,
-		scheme,
-		time
-	})) return false;
-	const hash = hashMessage(message);
-	return verifyHash(client, {
-		address: parsed.address,
-		hash,
-		signature,
-		...callRequest
-	});
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/internal.js
-init_abis();
-init_isAddress();
-init_isAddressEqual();
-init_encodeFunctionData();
-/**
-* Shapes a base-unit value into an {@link Amount} (base units, `decimals`, and
-* human-readable `formatted` string).
-*
-* @param amount - Amount in base units.
-* @param decimals - Token decimals used to format the amount.
-* @returns The {@link Amount}.
-*/
-function toAmount(amount, decimals) {
-	return {
-		amount,
-		decimals,
-		formatted: formatUnits(amount, decimals)
-	};
-}
-/**
-* Resolves the token contract `address` and `decimals` from a `token`, which is
-* either the symbol of a token declared on the client's `tokens` array or a
-* contract `address`.
-*
-* When `token` is a declared symbol, the `address` and `decimals` are resolved
-* from the Client's `tokens` array for the Client's `chain.id` (`decimals` can
-* be overridden via the explicit `decimals`). When `token` is an address, its
-* `decimals` is inferred from the Client's `tokens` array when the address
-* matches a declared token, otherwise taken from the explicit `decimals`.
-*
-* @param client - Client.
-* @param parameters - Parameters.
-* @returns The resolved `address` and `decimals`.
-*/
-function resolveToken(client, parameters) {
-	const { decimals, token } = parameters;
-	const declared = findDeclaredToken(client, token);
-	if (declared) return {
-		address: declared.address,
-		decimals: decimals ?? declared.decimals
-	};
-	if (isAddress(token, { strict: false })) return {
-		address: token,
-		decimals: decimals ?? inferDecimals(client, token)
-	};
-	throw new Error(`Token "${token}" is not a declared ERC-20 token on the client's \`tokens\` array (with an address for the client's chain), and is not a valid address.`);
-}
-/**
-* Finds the declared token on the Client's `tokens` array matching `token`
-* (either a token symbol or contract `address`), resolved to a {@link ResolvedToken}
-* for the Client's `chain.id`. Returns `undefined` when no declared token
-* matches, or the matching token has no address for the Client's chain.
-*
-* @param client - Client.
-* @param token - Token symbol (declared on the client's `tokens` array) or contract address.
-* @returns The matching resolved token config, or `undefined`.
-*/
-function findDeclaredToken(client, token) {
-	const tokens = client.tokens;
-	const chainId = client.chain?.id;
-	if (!tokens || chainId === void 0) return void 0;
-	const bySymbol = findTokenBySymbol(tokens, token);
-	if (bySymbol) return resolveTokenForChain(bySymbol, chainId);
-	if (isAddress(token, { strict: false })) for (const token_ of tokens) {
-		const resolved = resolveTokenForChain(token_, chainId);
-		if (resolved && isAddressEqual(resolved.address, token)) return resolved;
-	}
-}
-/**
-* Resolves a {@link Token} to a {@link ResolvedToken} for `chainId`, or
-* `undefined` when the token has no address for `chainId`. @internal
-*/
-function resolveTokenForChain(token, chainId) {
-	const address = token.addresses[chainId];
-	if (!address) return void 0;
-	return {
-		address,
-		currency: token.currency,
-		decimals: token.decimals,
-		name: token.name,
-		popular: token.popular,
-		symbol: token.symbol
-	};
-}
-/** Finds a {@link Token} by symbol (case-insensitively) on a `tokens` array. @internal */
-function findTokenBySymbol(tokens, symbol) {
-	const lowerSymbol = symbol.toLowerCase();
-	for (const token of tokens) if (token.symbol?.toLowerCase() === lowerSymbol) return token;
-}
-/**
-* Infers a token's `decimals` from the Client's `tokens` array by matching
-* `address` against each token's address for the Client's `chain.id`.
-* @internal
-*/
-function inferDecimals(client, address) {
-	const tokens = client.tokens;
-	const chainId = client.chain?.id;
-	if (tokens && chainId !== void 0) for (const token of tokens) {
-		const resolved = resolveTokenForChain(token, chainId);
-		if (resolved && isAddressEqual(resolved.address, address)) return resolved.decimals;
-	}
-}
-/**
-* Resolves token decimals, fetching from the token contract when they are not
-* provided explicitly or declared on the client.
-* @internal
-*/
-async function resolveTokenWithDecimals(client, parameters) {
-	const { address, decimals } = resolveToken(client, parameters);
-	if (decimals !== void 0) return {
-		address,
-		decimals
-	};
-	return {
-		address,
-		decimals: await readContract(client, {
-			abi: erc20Abi,
-			address,
-			functionName: "decimals"
-		})
-	};
-}
-function defineCall(call) {
-	return {
-		...call,
-		data: encodeFunctionData(call),
-		to: call.address
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/getAllowance.js
-init_abis();
-/**
-* Gets the ERC-20 allowance a spender has over an account's tokens.
-*
-* @example
-* ```ts
-* import { createClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { token } from 'viem/actions'
-*
-* const client = createClient({ chain: mainnet, transport: http() })
-*
-* const allowance = await token.getAllowance(client, {
-*   account: '0x...',
-*   spender: '0x...',
-*   token: '0x...',
-* })
-* ```
-*
-* @param client - Client.
-* @param parameters - Parameters.
-* @returns The allowance, in base units and human-readable form.
-*/
-async function getAllowance(client, parameters) {
-	const { account, decimals, spender, token, ...rest } = parameters;
-	const [amount, { decimals: resolved }] = await Promise.all([readContract(client, {
-		...rest,
-		...getAllowance.call(client, {
-			account,
-			spender,
-			token
-		})
-	}), resolveTokenWithDecimals(client, {
-		decimals,
-		token
-	})]);
-	return toAmount(amount, resolved);
-}
-(function(getAllowance) {
-	/**
-	* Defines a call to the `allowance` function.
-	*
-	* Can be passed as a parameter to `multicall`, `simulateContract`, or any
-	* other action that accepts a contract call. The token is selected by `token`
-	* symbol (resolved from the client's `tokens` array) or contract address.
-	*
-	* @param client - Client.
-	* @param args - Arguments.
-	* @returns The call.
-	*/
-	function call(client, args) {
-		return defineCall({
-			address: resolveToken(client, args).address,
-			abi: erc20Abi,
-			functionName: "allowance",
-			args: [args.account, args.spender]
-		});
-	}
-	getAllowance.call = call;
-})(getAllowance || (getAllowance = {}));
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/getBalance.js
-init_parseAccount();
-init_abis();
-/**
-* Gets the ERC-20 token balance of an account.
-*
-* @example
-* ```ts
-* import { createClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { token } from 'viem/actions'
-*
-* const client = createClient({ chain: mainnet, transport: http() })
-*
-* const balance = await token.getBalance(client, {
-*   account: '0x...',
-*   token: '0x...',
-* })
-* ```
-*
-* @param client - Client.
-* @param parameters - Parameters.
-* @returns The token balance, in base units and human-readable form.
-*/
-async function getBalance(client, parameters) {
-	const { account: account_ = client.account, decimals, token, ...rest } = parameters;
-	if (!account_) throw new AccountNotFoundError();
-	const account = parseAccount(account_).address;
-	const [amount, { decimals: resolved }] = await Promise.all([readContract(client, {
-		...rest,
-		...getBalance.call(client, {
-			account,
-			token
-		})
-	}), resolveTokenWithDecimals(client, {
-		decimals,
-		token
-	})]);
-	return toAmount(amount, resolved);
-}
-(function(getBalance) {
-	/**
-	* Defines a call to the `balanceOf` function.
-	*
-	* Can be passed as a parameter to `multicall`, `simulateContract`, or any
-	* other action that accepts a contract call. The token is selected by `token`
-	* symbol (resolved from the client's `tokens` array) or contract address.
-	*
-	* @param client - Client.
-	* @param args - Arguments.
-	* @returns The call.
-	*/
-	function call(client, args) {
-		const account_ = args.account ?? client.account;
-		if (!account_) throw new AccountNotFoundError();
-		const account = parseAccount(account_).address;
-		return defineCall({
-			address: resolveToken(client, args).address,
-			abi: erc20Abi,
-			functionName: "balanceOf",
-			args: [account]
-		});
-	}
-	getBalance.call = call;
-})(getBalance || (getBalance = {}));
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/getMetadata.js
-init_abis();
-/**
-* Gets the metadata (`decimals`, `name`, `symbol`) of an ERC-20 token.
-*
-* Fields declared on the Client's `tokens` array are used as-is; any missing
-* field is fetched from the token contract.
-*
-* @example
-* ```ts
-* import { createClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { token } from 'viem/actions'
-*
-* const client = createClient({ chain: mainnet, transport: http() })
-*
-* const metadata = await token.getMetadata(client, {
-*   token: '0x...',
-* })
-* ```
-*
-* @param client - Client.
-* @param parameters - Parameters.
-* @returns The token metadata (`decimals`, `name`, `symbol`).
-*/
-async function getMetadata(client, parameters) {
-	const { token, ...rest } = parameters;
-	const { address } = resolveToken(client, { token });
-	const declared = findDeclaredToken(client, token);
-	const [decimals_, name, symbol] = await Promise.all([
-		declared?.decimals ?? readContract(client, {
-			...rest,
-			abi: erc20Abi,
-			address,
-			functionName: "decimals"
-		}),
-		declared?.name ?? readContract(client, {
-			...rest,
-			abi: erc20Abi,
-			address,
-			functionName: "name"
-		}),
-		declared?.symbol ?? readContract(client, {
-			...rest,
-			abi: erc20Abi,
-			address,
-			functionName: "symbol"
-		})
-	]);
-	return {
-		decimals: decimals_,
-		name,
-		symbol
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/actions/token/getTotalSupply.js
-init_abis();
-/**
-* Gets the total supply of an ERC-20 token.
-*
-* @example
-* ```ts
-* import { createClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-* import { token } from 'viem/actions'
-*
-* const client = createClient({ chain: mainnet, transport: http() })
-*
-* const totalSupply = await token.getTotalSupply(client, {
-*   token: '0x...',
-* })
-* ```
-*
-* @param client - Client.
-* @param parameters - Parameters.
-* @returns The token total supply, in base units and human-readable form.
-*/
-async function getTotalSupply(client, parameters) {
-	const { decimals, token, ...rest } = parameters;
-	const [amount, { decimals: resolved }] = await Promise.all([readContract(client, {
-		...rest,
-		...getTotalSupply.call(client, { token })
-	}), resolveTokenWithDecimals(client, {
-		decimals,
-		token
-	})]);
-	return toAmount(amount, resolved);
-}
-(function(getTotalSupply) {
-	/**
-	* Defines a call to the `totalSupply` function.
-	*
-	* Can be passed as a parameter to `multicall`, `simulateContract`, or any
-	* other action that accepts a contract call. The token is selected by `token`
-	* symbol (resolved from the client's `tokens` array) or contract address.
-	*
-	* @param client - Client.
-	* @param args - Arguments.
-	* @returns The call.
-	*/
-	function call(client, args) {
-		return defineCall({
-			address: resolveToken(client, args).address,
-			abi: erc20Abi,
-			args: [],
-			functionName: "totalSupply"
-		});
-	}
-	getTotalSupply.call = call;
-})(getTotalSupply || (getTotalSupply = {}));
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/decorators/public.js
-init_call();
-function publicActions(client) {
-	return {
-		call: (args) => call(client, args),
-		createAccessList: (args) => createAccessList(client, args),
-		createBlockFilter: () => createBlockFilter(client),
-		createContractEventFilter: (args) => createContractEventFilter(client, args),
-		createEventFilter: (args) => createEventFilter(client, args),
-		createPendingTransactionFilter: () => createPendingTransactionFilter(client),
-		estimateContractGas: (args) => estimateContractGas(client, args),
-		estimateGas: (args) => estimateGas(client, args),
-		getBalance: (args) => getBalance$1(client, args),
-		getBlobBaseFee: () => getBlobBaseFee(client),
-		getBlock: (args) => getBlock(client, args),
-		getBlockNumber: (args) => getBlockNumber(client, args),
-		getBlockReceipts: (args) => getBlockReceipts(client, args),
-		getBlockTransactionCount: (args) => getBlockTransactionCount(client, args),
-		getBytecode: (args) => getCode(client, args),
-		getChainId: () => getChainId(client),
-		getCode: (args) => getCode(client, args),
-		getContractEvents: (args) => getContractEvents(client, args),
-		getDelegation: (args) => getDelegation(client, args),
-		getEip712Domain: (args) => getEip712Domain(client, args),
-		getEnsAddress: (args) => getEnsAddress(client, args),
-		getEnsAvatar: (args) => getEnsAvatar(client, args),
-		getEnsName: (args) => getEnsName(client, args),
-		getEnsResolver: (args) => getEnsResolver(client, args),
-		getEnsText: (args) => getEnsText(client, args),
-		getFeeHistory: (args) => getFeeHistory(client, args),
-		estimateFeesPerGas: (args) => estimateFeesPerGas(client, args),
-		getFilterChanges: (args) => getFilterChanges(client, args),
-		getFilterLogs: (args) => getFilterLogs(client, args),
-		getGasPrice: () => getGasPrice(client),
-		getLogs: (args) => getLogs(client, args),
-		getProof: (args) => getProof(client, args),
-		estimateMaxPriorityFeePerGas: (args) => estimateMaxPriorityFeePerGas(client, args),
-		fillTransaction: (args) => fillTransaction(client, args),
-		getRawTransaction: (args) => getRawTransaction(client, args),
-		getStorageAt: (args) => getStorageAt(client, args),
-		getStorageValues: (args) => getStorageValues(client, args),
-		getTransaction: (args) => getTransaction(client, args),
-		getTransactionConfirmations: (args) => getTransactionConfirmations(client, args),
-		getTransactionCount: (args) => getTransactionCount(client, args),
-		getTransactionReceipt: (args) => getTransactionReceipt(client, args),
-		multicall: (args) => multicall(client, args),
-		prepareTransactionRequest: (args) => prepareTransactionRequest(client, args),
-		readContract: (args) => readContract(client, args),
-		sendRawTransaction: (args) => sendRawTransaction(client, args),
-		sendRawTransactionSync: (args) => sendRawTransactionSync(client, args),
-		simulate: (args) => simulateBlocks(client, args),
-		simulateBlocks: (args) => simulateBlocks(client, args),
-		simulateCalls: (args) => simulateCalls(client, args),
-		simulateContract: (args) => simulateContract(client, args),
-		verifyHash: (args) => verifyHash(client, args),
-		verifyMessage: (args) => verifyMessage(client, args),
-		verifySiweMessage: (args) => verifySiweMessage(client, args),
-		verifyTypedData: (args) => verifyTypedData(client, args),
-		uninstallFilter: (args) => uninstallFilter(client, args),
-		waitForTransactionReceipt: (args) => waitForTransactionReceipt(client, args),
-		watchBlockHeaders: (args) => watchBlockHeaders(client, args),
-		watchBlocks: (args) => watchBlocks(client, args),
-		watchBlockNumber: (args) => watchBlockNumber(client, args),
-		watchContractEvent: (args) => watchContractEvent(client, args),
-		watchEvent: (args) => watchEvent(client, args),
-		watchPendingTransactions: (args) => watchPendingTransactions(client, args),
-		token: bindPublicToken(client)
-	};
-}
-/**
-* Binds the read-only ERC-20 actions (and their `.call` helpers) to `client`.
-* Merged with the write actions from {@link walletActions} (when present) by the
-* Client's `extend`, which shallow-merges conflicting plain-object namespaces.
-* @internal
-*/
-function bindPublicToken(client) {
-	return {
-		getAllowance: bindActionDecorators(client, getAllowance),
-		getBalance: bindActionDecorators(client, getBalance),
-		getMetadata: bindActionDecorators(client, getMetadata),
-		getTotalSupply: bindActionDecorators(client, getTotalSupply)
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/createPublicClient.js
-/**
-* Creates a Public Client with a given [Transport](https://viem.sh/docs/clients/intro) configured for a [Chain](https://viem.sh/docs/clients/chains).
-*
-* - Docs: https://viem.sh/docs/clients/public
-*
-* A Public Client is an interface to "public" [JSON-RPC API](https://ethereum.org/en/developers/docs/apis/json-rpc/) methods such as retrieving block numbers, transactions, reading from smart contracts, etc through [Public Actions](/docs/actions/public/introduction).
-*
-* @param config - {@link PublicClientConfig}
-* @returns A Public Client. {@link PublicClient}
-*
-* @example
-* import { createPublicClient, http } from 'viem'
-* import { mainnet } from 'viem/chains'
-*
-* const client = createPublicClient({
-*   chain: mainnet,
-*   transport: http(),
-* })
-*/
-function createPublicClient(parameters) {
-	const { key = "public", name = "Public Client" } = parameters;
-	return createClient({
-		...parameters,
-		key,
-		name,
-		type: "publicClient"
-	}).extend(publicActions);
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/transports/createTransport.js
-/**
-* @description Creates an transport intended to be used with a client.
-*/
-function createTransport({ key, methods, name, request, retryCount = 3, retryDelay = 150, timeout, type }, value) {
-	const uid$1 = uid();
-	return {
-		config: {
-			key,
-			methods,
-			name,
-			request,
-			retryCount,
-			retryDelay,
-			timeout,
-			type
-		},
-		request: buildRequest(request, {
-			methods,
-			retryCount,
-			retryDelay,
-			uid: uid$1
-		}),
-		value
-	};
-}
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/errors/transport.js
-init_base();
-var UrlRequiredError = class extends BaseError$2 {
-	constructor() {
-		super("No URL was provided to the Transport. Please provide a valid RPC URL to the Transport.", {
-			docsPath: "/docs/clients/intro",
-			name: "UrlRequiredError"
-		});
-	}
-};
-
-//#endregion
-//#region ../../node_modules/.pnpm/viem@2.57.0_typescript@5.8.3_zod@4.6.5/node_modules/viem/_esm/clients/transports/http.js
-init_request();
-init_createBatchScheduler();
-let signalId = 0;
-const signalIds = /* @__PURE__ */ new WeakMap();
-function getSignalId(signal) {
-	if (!signal) return "default";
-	const id = signalIds.get(signal);
-	if (id !== void 0) return id;
-	const nextId = signalId++;
-	signalIds.set(signal, nextId);
-	return nextId;
-}
-/**
-* @description Creates a HTTP transport that connects to a JSON-RPC API.
-*/
-function http(url, config = {}) {
-	const { batch, fetchFn, fetchOptions, key = "http", maxResponseBodySize, methods, name = "HTTP JSON-RPC", onFetchRequest, onFetchResponse, retryDelay, raw } = config;
-	return ({ chain, retryCount: retryCount_, timeout: timeout_ }) => {
-		const { batchSize = 1e3, wait = 0 } = typeof batch === "object" ? batch : {};
-		const retryCount = config.retryCount ?? retryCount_;
-		const timeout = timeout_ ?? config.timeout ?? 1e4;
-		const url_ = url || chain?.rpcUrls.default.http[0];
-		if (!url_) throw new UrlRequiredError();
-		const rpcClient = getHttpRpcClient(url_, {
-			fetchFn,
-			fetchOptions,
-			maxResponseBodySize,
-			onRequest: onFetchRequest,
-			onResponse: onFetchResponse,
-			timeout
-		});
-		return createTransport({
-			key,
-			methods,
-			name,
-			async request({ method, params }, options) {
-				const body = {
-					method,
-					params
-				};
-				const fetchOptions = options?.signal ? { signal: options.signal } : void 0;
-				const { schedule } = createBatchScheduler({
-					id: `${url_}.${getSignalId(options?.signal)}`,
-					wait,
-					shouldSplitBatch(requests) {
-						return requests.length > batchSize;
-					},
-					fn: (body) => rpcClient.request({
-						body,
-						fetchOptions
-					}),
-					sort: (a, b) => a.id - b.id
-				});
-				const fn = async (body) => batch ? schedule(body) : [await rpcClient.request({
-					body,
-					fetchOptions
-				})];
-				const [{ error, result }] = await fn(body);
-				if (raw) return {
-					error,
-					result
-				};
-				if (error) throw new RpcRequestError({
-					body,
-					error,
-					url: url_
-				});
-				return result;
-			},
-			retryCount,
-			retryDelay,
-			timeout,
-			type: "http"
-		}, {
-			fetchOptions,
-			url: url_
-		});
-	};
-}
-
-//#endregion
 //#region ../sdk/dist/index.js
 var dist_exports = /* @__PURE__ */ __exportAll$1({
 	BsktsClient: () => BsktsClient,
@@ -27445,6 +27533,7 @@ var dist_exports = /* @__PURE__ */ __exportAll$1({
 	coverFeeKey: () => coverFeeKey,
 	coverRelayer: () => coverRelayer,
 	coverTypedData: () => coverTypedData,
+	decodeAgentOrder: () => decodeAgentOrder,
 	decodeCoverAction: () => decodeCoverAction,
 	execute: () => execute,
 	executeCover: () => executeCover,
@@ -27454,6 +27543,7 @@ var dist_exports = /* @__PURE__ */ __exportAll$1({
 	feeKey: () => feeKey,
 	feeMemory: () => feeMemory,
 	isBsktsError: () => isBsktsError,
+	limitOrderId: () => limitOrderId,
 	policyFromEnv: () => policyFromEnv,
 	robinhood: () => robinhood,
 	schemas: () => schemas_exports,
@@ -27461,7 +27551,7 @@ var dist_exports = /* @__PURE__ */ __exportAll$1({
 	sessionRelayer: () => sessionRelayer,
 	viemSender: () => viemSender
 });
-init_decodeAbiParameters(), init_parseAbi();
+init_decodeAbiParameters(), init_encodeAbiParameters(), init_parseAbi(), init_parseAbiParameters();
 var BsktsError = class extends Error {
 	code;
 	options;
@@ -27483,6 +27573,45 @@ var BsktsError = class extends Error {
 	}
 };
 const isBsktsError = (e) => e instanceof BsktsError;
+const limitTermsAbi = parseAbiParameters("(uint256 triggerNavE18,bool triggerBelow,uint64 deadline,uint16 maxSlippageBps,uint16 fillerFeeBps,uint16 startSlippageBps)");
+function decodeAgentOrder(plan) {
+	const fail = () => new BsktsError("Invalid delegated limit-order terms.", "BAD_RESPONSE");
+	const a = plan.action;
+	try {
+		if (a.limit !== 0n) throw fail();
+		if (a.kind === 4) {
+			const [orderId] = decodeAbiParameters([{ type: "bytes32" }], a.data);
+			if (a.amount !== 0n || a.slippageBps !== 0 || a.data.toLowerCase() !== encodeAbiParameters([{ type: "bytes32" }], [orderId]).toLowerCase()) throw fail();
+			return {
+				kind: "cancel",
+				orderId
+			};
+		}
+		if (a.kind !== 2 || a.amount < 5000000n) throw fail();
+		const [terms] = decodeAbiParameters(limitTermsAbi, a.data);
+		if (encodeAbiParameters(limitTermsAbi, [terms]).toLowerCase() !== a.data.toLowerCase() || !terms.triggerBelow || terms.triggerNavE18 <= 0n || terms.deadline > BigInt(plan.status.validUntil) || terms.deadline < BigInt(a.deadline) || terms.maxSlippageBps < 50 || terms.maxSlippageBps > plan.status.maxSlippageBps || terms.maxSlippageBps !== a.slippageBps || terms.fillerFeeBps > 100 || terms.startSlippageBps < 50 || terms.startSlippageBps > terms.maxSlippageBps || a.amount > plan.status.remainingTodayUsdg || a.amount + a.fee > plan.status.usdgWei) throw fail();
+		return {
+			kind: "limit",
+			...terms
+		};
+	} catch {
+		throw fail();
+	}
+}
+const createdAbi = parseAbi(["event OrderCreated(bytes32 indexed id,address indexed recipient,address vault,uint256 amount,uint256 triggerNavE18,bool triggerBelow,uint64 deadline,uint16 maxSlippageBps,uint16 fillerFeeBps)"]);
+/** Read the order ID from a placement receipt, without relying on indexer lag. */
+function limitOrderId(logs) {
+	for (const log of logs) {
+		if (log.address.toLowerCase() !== "0x5e267dBD5d0540be1b6EADe920F288fF50EB76Db".toLowerCase()) continue;
+		try {
+			return decodeEventLog({
+				abi: createdAbi,
+				data: log.data,
+				topics: [...log.topics]
+			}).args.id;
+		} catch {}
+	}
+}
 /** A Sender over viem clients. The wallet client must carry its account and
 * chain (`createWalletClient({ account, chain: robinhood, transport })`); in a
 * browser, `transport: custom(window.ethereum)`. */
@@ -27579,6 +27708,8 @@ var schemas_exports = /* @__PURE__ */ __exportAll({
 	SESSION_MODULE: () => SESSION_MODULE,
 	address: () => address,
 	agentCoverPlan: () => agentCoverPlan,
+	agentExecutionPlan: () => agentExecutionPlan,
+	agentOrderPlan: () => agentOrderPlan,
 	agentSession: () => agentSession,
 	agentTradePlan: () => agentTradePlan,
 	apiErrorBody: () => apiErrorBody,
@@ -27923,9 +28054,14 @@ const agentSession = object({
 const sessionAction = object({
 	account: address,
 	key: address,
-	kind: union([literal(0), literal(1)]),
+	kind: union([
+		literal(0),
+		literal(1),
+		literal(2),
+		literal(4)
+	]),
 	vault: address,
-	amount: uint256.refine((n) => n > 0n),
+	amount: uint256,
 	limit: uint256,
 	slippageBps: number().int().min(0).max(1e3),
 	data: hex.refine((h) => h.length % 2 === 0),
@@ -27933,7 +28069,7 @@ const sessionAction = object({
 	deadline: number().int().positive().max(2 ** 48 - 1),
 	fee: uint256.refine((n) => n <= 10000000n)
 });
-const agentTradePlan = object({
+const agentPlanBase = object({
 	ticker: string(),
 	status: agentSession,
 	action: sessionAction,
@@ -27943,6 +28079,9 @@ const agentTradePlan = object({
 	message: "Action vault does not match the reviewed basket address; upgrade for new baskets.",
 	path: ["action", "vault"]
 });
+const agentTradePlan = agentPlanBase.refine((p) => (p.action.kind === 0 || p.action.kind === 1) && p.action.amount > 0n, "Expected a market trade");
+const agentOrderPlan = agentPlanBase.refine((p) => p.action.kind === 2 || p.action.kind === 4, "Expected a limit order or cancellation");
+const agentExecutionPlan = union([agentTradePlan, agentOrderPlan]);
 const sessionReceipt = object({
 	hash: hex.refine((h) => /^0x[0-9a-fA-F]{64}$/.test(h)),
 	blockNumber: number().int().nonnegative(),
@@ -28254,6 +28393,10 @@ const feeKey = (action) => `${action.kind}:${action.vault.toLowerCase()}`;
 * `fees` (default: this process's memory; false: none) signs with the fee this
 * kind of trade last needed, so a repeat trade is usually one signature. */
 async function executeSession(plan, sender, options) {
+	const parsed = agentExecutionPlan.safeParse(JSON.parse(JSON.stringify(plan, (_, v) => typeof v === "bigint" ? v.toString() : v)));
+	if (!parsed.success) throw new BsktsError("Invalid agent action plan.", "BAD_RESPONSE");
+	plan = parsed.data;
+	if (plan.action.kind === 2 || plan.action.kind === 4) decodeAgentOrder(plan);
 	const maxFee = options.maxNetworkFeeUsdg;
 	if (!isAgentVault(plan.ticker, plan.action.vault)) throw new BsktsError("Action vault does not match the reviewed basket address.", "BAD_RESPONSE");
 	const fees = options.fees === false ? void 0 : options.fees ?? processFees$1;
@@ -28307,7 +28450,7 @@ const journalOf = (plan) => object({
 	plan,
 	maxNetworkFeeUsdg: wei.refine((n) => n <= 10000000n)
 });
-const pending = journalOf(agentTradePlan);
+const pending = journalOf(agentExecutionPlan);
 const outcome = discriminatedUnion("state", [
 	object({
 		state: literal("confirmed"),
@@ -28800,6 +28943,34 @@ var BsktsClient = class {
 		}
 		return plan;
 	}
+	/** Unsigned delegated limit buy or cancellation. Existing orders are read
+	* with orders(session.account); only this account's LimitEscrow is cancellable. */
+	async buildAgentOrder(p) {
+		if (p.kind === "limit") {
+			if (!Number.isFinite(p.amountUsdg) || p.amountUsdg < 5 || p.amountUsdg > Number.MAX_SAFE_INTEGER / 1e6 || !Number.isFinite(p.triggerNav) || p.triggerNav <= 0 || p.expiryDays !== void 0 && (!Number.isInteger(p.expiryDays) || p.expiryDays < 1 || p.expiryDays > 90)) throw new BsktsError("Invalid limit amount, trigger or expiry.", "BAD_REQUEST");
+			checkPolicy(this.policy, {
+				ticker: p.ticker,
+				usd: p.amountUsdg,
+				slippageBps: p.slippageBps
+			});
+			if (this.policy.maxBuyCostBps != null) checkPolicy(this.policy, {
+				ticker: p.ticker,
+				buyCostBps: (await this.basket(p.ticker)).buyCostBps
+			});
+		} else if (!/^0x[0-9a-fA-F]{64}$/.test(p.orderId)) throw new BsktsError("Invalid orderId.", "BAD_REQUEST");
+		const plan = await this.#request(agentOrderPlan, "/v1/agent/order", p);
+		const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+		const terms = decodeAgentOrder(plan);
+		if (!same(plan.status.owner, p.owner) || !same(plan.status.key, p.key) || !same(plan.action.key, p.key) || !same(plan.status.account, plan.action.account) || plan.action.fee !== (p.feeUsdg ?? 0n) || terms.kind !== p.kind) throw new BsktsError("Agent order does not match the request.", "BAD_RESPONSE");
+		if (p.kind === "limit" && terms.kind === "limit") {
+			if (plan.ticker.toUpperCase() !== p.ticker.toUpperCase() || plan.action.amount !== BigInt(Math.floor(p.amountUsdg * 1e6)) || terms.triggerNavE18 !== parseUnits(p.triggerNav.toLocaleString("en-US", {
+				useGrouping: false,
+				maximumFractionDigits: 18
+			}), 18) || plan.action.slippageBps !== (p.slippageBps ?? Math.min(50, plan.status.maxSlippageBps)) || terms.deadline > BigInt(Math.floor(Date.now() / 1e3) + (p.expiryDays ?? 30) * 86400 + 60)) throw new BsktsError("Agent limit terms differ from the request.", "BAD_RESPONSE");
+			checkPolicy(this.policy, { slippageBps: plan.action.slippageBps });
+		} else if (p.kind === "cancel" && terms.kind === "cancel" && !same(terms.orderId, p.orderId)) throw new BsktsError("Cancellation targets a different order.", "BAD_RESPONSE");
+		return plan;
+	}
 	/** The weeks a session may buy cover for (the one trading now and the next
 	* two), the contract's terms, a session's price limits, tickers and presets. */
 	coverWeeks() {
@@ -29176,7 +29347,7 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.0.0";
+const SKILL_VERSION = "1.1.0";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
@@ -29187,6 +29358,9 @@ const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   buy TICKER USD [--slippage BPS]                          dry run: builds and simulates, sends nothing
   sell TICKER (--shares WEI|max | --fraction 0.5) [...]     dry run
   buy|sell ... --send --id ID                               the live trade, once per ID
+  limit TICKER USD --nav NAV [--days N] [--slippage BPS]  dry run; --send --id to place
+  orders                     open account limit and exit orders
+  cancel ORDER_ID            dry run; --send --id to cancel a limit
   trade-status --id ID       outcome of a journalled trade or cover action, never sends anything
 Weekend Cover (buying only; the owner must have turned Cover on). Actions dry run unless --send --id:
   cover-weeks                weeks open to buy, terms, limits, preset ranges
@@ -29296,6 +29470,16 @@ function simulationView(sim) {
 }
 function planView(plan, side) {
 	const a = plan.action;
+	if (a.kind === 2 || a.kind === 4) return {
+		ticker: plan.ticker,
+		side,
+		...a.kind === 2 ? { amountUsdg: usd6(a.amount) } : {},
+		terms: decodeAgentOrder(plan),
+		slippageBps: a.slippageBps,
+		remainingTodayUsdg: usd6(plan.status.remainingTodayUsdg),
+		...simulationView(plan.simulation),
+		...plan.simulation?.ok === null ? { simulationNote: "Not simulated: this unsigned plan checked permissions, budget and order terms. The relayer simulates the signed action before submission. Placement does not simulate a future fill." } : {}
+	};
 	return {
 		ticker: plan.ticker,
 		side,
@@ -29424,10 +29608,10 @@ async function heldShares(client, account, ticker) {
 function trade(side) {
 	return (pos, flags) => withAgent(async ({ sdk, fileSessionStore, viem, client, owner, agent }) => {
 		const ticker = String(pos[1] ?? "").toUpperCase();
-		if (!/^[A-Z0-9]{2,12}$/.test(ticker)) throw new CliError(`${side} needs a basket ticker.`);
+		if (side !== "cancel" && !/^[A-Z0-9]{2,12}$/.test(ticker)) throw new CliError(`${side} needs a basket ticker.`);
 		const slippageBps = flags.slippage != null ? Number(flags.slippage) : void 0;
 		let amountUsdg;
-		if (side === "buy") {
+		if (side === "buy" || side === "limit") {
 			amountUsdg = Number(pos[2]);
 			if (!(amountUsdg > 0)) throw new CliError("buy TICKER USD: USD is a dollar amount, e.g. 10.");
 		}
@@ -29447,6 +29631,19 @@ function trade(side) {
 				ticker,
 				...slippageBps != null ? { slippageBps } : {}
 			};
+			if (side === "cancel") return client.buildAgentOrder({
+				kind: "cancel",
+				owner,
+				key: agent.address,
+				orderId: pos[1]
+			});
+			if (side === "limit") return client.buildAgentOrder({
+				...args,
+				kind: "limit",
+				amountUsdg,
+				triggerNav: Number(flags.nav),
+				expiryDays: flags.days !== void 0 ? Number(flags.days) : void 0
+			});
 			return side === "buy" ? client.buildAgentTrade({
 				...args,
 				side,
@@ -29483,7 +29680,18 @@ function trade(side) {
 			reconcile: (plan) => sdk.sessionActionState(chain, plan.action),
 			build
 		});
-		out(outcomeView(id, result, existing !== void 0));
+		const recordedKind = Number((await store.load())?.plan?.action?.kind);
+		let orderId;
+		if (recordedKind === 2 && result.state === "confirmed") try {
+			orderId = sdk.limitOrderId((await chain.getTransactionReceipt({ hash: result.receipt.hash })).logs);
+		} catch {}
+		const view = outcomeView(id, result, existing !== void 0);
+		out({
+			...view,
+			...orderId ? { orderId } : {},
+			...result.state === "confirmed" && recordedKind === 2 ? { note: "Limit placement confirmed. This is not confirmation of a fill; check orders and the transaction receipt." } : {},
+			...result.state === "confirmed" && recordedKind === 4 ? { note: "Limit cancellation confirmed; escrow returned to the account." } : {}
+		});
 	});
 }
 function outcomeView(id, result, alreadyRecorded) {
@@ -29669,6 +29877,19 @@ const COMMANDS = {
 	markets,
 	basket,
 	positions,
+	limit: trade("limit"),
+	cancel: trade("cancel"),
+	orders: () => withAgent(async ({ client, owner, agent }) => {
+		const s = await client.agentSession({
+			owner,
+			key: agent.address
+		});
+		out({
+			ok: true,
+			account: s.account,
+			...await client.orders(s.account)
+		});
+	}),
 	buy: trade("buy"),
 	sell: trade("sell"),
 	"trade-status": tradeStatus,

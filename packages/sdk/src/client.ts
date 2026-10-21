@@ -1,4 +1,5 @@
-import type { Address } from "viem";
+import { parseUnits, type Address, type Hex } from "viem";
+import { decodeAgentOrder } from "./agent-orders";
 import { z } from "zod";
 import { BsktsError, type ErrorCode } from "./errors";
 import { execute, type ExecuteResult, type Sender } from "./execute";
@@ -248,6 +249,71 @@ export class BsktsClient {
       const detail = await this.basket(p.ticker);
       checkPolicy(this.policy, { usd: (Number(plan.action.amount) / 1e18) * (detail.nav ?? 0) });
     }
+    return plan;
+  }
+
+  /** Unsigned delegated limit buy or cancellation. Existing orders are read
+   * with orders(session.account); only this account's LimitEscrow is cancellable. */
+  async buildAgentOrder(
+    p: { owner: Address; key: Address; feeUsdg?: bigint } & (
+      | {
+          kind: "limit";
+          ticker: string;
+          amountUsdg: number;
+          triggerNav: number;
+          expiryDays?: number;
+          slippageBps?: number;
+        }
+      | { kind: "cancel"; orderId: Hex }
+    ),
+  ) {
+    if (p.kind === "limit") {
+      if (
+        !Number.isFinite(p.amountUsdg) ||
+        p.amountUsdg < 5 ||
+        p.amountUsdg > Number.MAX_SAFE_INTEGER / 1e6 ||
+        !Number.isFinite(p.triggerNav) ||
+        p.triggerNav <= 0 ||
+        (p.expiryDays !== undefined &&
+          (!Number.isInteger(p.expiryDays) || p.expiryDays < 1 || p.expiryDays > 90))
+      )
+        throw new BsktsError("Invalid limit amount, trigger or expiry.", "BAD_REQUEST");
+      checkPolicy(this.policy, { ticker: p.ticker, usd: p.amountUsdg, slippageBps: p.slippageBps });
+      if (this.policy.maxBuyCostBps != null)
+        checkPolicy(this.policy, {
+          ticker: p.ticker,
+          buyCostBps: (await this.basket(p.ticker)).buyCostBps,
+        });
+    } else if (!/^0x[0-9a-fA-F]{64}$/.test(p.orderId))
+      throw new BsktsError("Invalid orderId.", "BAD_REQUEST");
+    const plan = await this.#request(s.agentOrderPlan, "/v1/agent/order", p);
+    const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+    const terms = decodeAgentOrder(plan);
+    if (
+      !same(plan.status.owner, p.owner) ||
+      !same(plan.status.key, p.key) ||
+      !same(plan.action.key, p.key) ||
+      !same(plan.status.account, plan.action.account) ||
+      plan.action.fee !== (p.feeUsdg ?? 0n) ||
+      terms.kind !== p.kind
+    )
+      throw new BsktsError("Agent order does not match the request.", "BAD_RESPONSE");
+    if (p.kind === "limit" && terms.kind === "limit") {
+      if (
+        plan.ticker.toUpperCase() !== p.ticker.toUpperCase() ||
+        plan.action.amount !== BigInt(Math.floor(p.amountUsdg * 1e6)) ||
+        terms.triggerNavE18 !==
+          parseUnits(
+            p.triggerNav.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 18 }),
+            18,
+          ) ||
+        plan.action.slippageBps !== (p.slippageBps ?? Math.min(50, plan.status.maxSlippageBps)) ||
+        terms.deadline > BigInt(Math.floor(Date.now() / 1000) + (p.expiryDays ?? 30) * 86400 + 60)
+      )
+        throw new BsktsError("Agent limit terms differ from the request.", "BAD_RESPONSE");
+      checkPolicy(this.policy, { slippageBps: plan.action.slippageBps });
+    } else if (p.kind === "cancel" && terms.kind === "cancel" && !same(terms.orderId, p.orderId))
+      throw new BsktsError("Cancellation targets a different order.", "BAD_RESPONSE");
     return plan;
   }
 
