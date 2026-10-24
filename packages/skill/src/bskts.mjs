@@ -35,7 +35,7 @@ const RPC = "https://bskts.xyz/rpc";
 // keeps them equal). skills.sh tracks installs by content hash only, so this
 // is how a person or agent tells which build is running when debugging.
 // Bump it with any change under skills/ and tag main skill-v<version>.
-const SKILL_VERSION = "1.1.0";
+const SKILL_VERSION = "1.1.1";
 
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version
@@ -47,7 +47,7 @@ const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   buy TICKER USD [--slippage BPS]                          dry run: builds and simulates, sends nothing
   sell TICKER (--shares WEI|max | --fraction 0.5) [...]     dry run
   buy|sell ... --send --id ID                               the live trade, once per ID
-  limit TICKER USD --nav NAV [--days N] [--slippage BPS]  dry run; --send --id to place
+  limit TICKER USD --nav NAV --slippage BPS [--days N]    dry run; --send --id to place
   orders                     open account limit and exit orders
   cancel ORDER_ID            dry run; --send --id to cancel a limit
   trade-status --id ID       outcome of a journalled trade or cover action, never sends anything
@@ -328,6 +328,12 @@ function trade(side) {
         if (!(amountUsdg > 0))
           throw new CliError("buy TICKER USD: USD is a dollar amount, e.g. 10.");
       }
+      // 2026-10-24: the API requires a limit's slippage. Its old 50 bps default
+      // sat below yield baskets' fill cost, so their orders never filled.
+      if (side === "limit" && slippageBps == null)
+        throw new CliError(
+          "limit needs --slippage BPS: at least the basket's buy cost + 20 bps and at most status's maxSlippageBps.",
+        );
       // 2026-10-11: dry run unless --send (owner: "replace the starter and the
       // skill with dry run logic"). Live used to be the default and --dry the
       // opt-in, so a model that dropped one flag spent real money.

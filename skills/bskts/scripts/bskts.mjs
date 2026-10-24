@@ -28948,6 +28948,7 @@ var BsktsClient = class {
 	async buildAgentOrder(p) {
 		if (p.kind === "limit") {
 			if (!Number.isFinite(p.amountUsdg) || p.amountUsdg < 5 || p.amountUsdg > Number.MAX_SAFE_INTEGER / 1e6 || !Number.isFinite(p.triggerNav) || p.triggerNav <= 0 || p.expiryDays !== void 0 && (!Number.isInteger(p.expiryDays) || p.expiryDays < 1 || p.expiryDays > 90)) throw new BsktsError("Invalid limit amount, trigger or expiry.", "BAD_REQUEST");
+			if (!Number.isInteger(p.slippageBps) || p.slippageBps < 50 || p.slippageBps > 1e3) throw new BsktsError("slippageBps is required for a limit: an integer from 50 to 1000.", "BAD_REQUEST");
 			checkPolicy(this.policy, {
 				ticker: p.ticker,
 				usd: p.amountUsdg,
@@ -28966,7 +28967,7 @@ var BsktsClient = class {
 			if (plan.ticker.toUpperCase() !== p.ticker.toUpperCase() || plan.action.amount !== BigInt(Math.floor(p.amountUsdg * 1e6)) || terms.triggerNavE18 !== parseUnits(p.triggerNav.toLocaleString("en-US", {
 				useGrouping: false,
 				maximumFractionDigits: 18
-			}), 18) || plan.action.slippageBps !== (p.slippageBps ?? Math.min(50, plan.status.maxSlippageBps)) || terms.deadline > BigInt(Math.floor(Date.now() / 1e3) + (p.expiryDays ?? 30) * 86400 + 60)) throw new BsktsError("Agent limit terms differ from the request.", "BAD_RESPONSE");
+			}), 18) || plan.action.slippageBps !== p.slippageBps || terms.deadline > BigInt(Math.floor(Date.now() / 1e3) + (p.expiryDays ?? 30) * 86400 + 60)) throw new BsktsError("Agent limit terms differ from the request.", "BAD_RESPONSE");
 			checkPolicy(this.policy, { slippageBps: plan.action.slippageBps });
 		} else if (p.kind === "cancel" && terms.kind === "cancel" && !same(terms.orderId, p.orderId)) throw new BsktsError("Cancellation targets a different order.", "BAD_RESPONSE");
 		return plan;
@@ -29347,7 +29348,7 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.1.0";
+const SKILL_VERSION = "1.1.1";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
@@ -29358,7 +29359,7 @@ const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   buy TICKER USD [--slippage BPS]                          dry run: builds and simulates, sends nothing
   sell TICKER (--shares WEI|max | --fraction 0.5) [...]     dry run
   buy|sell ... --send --id ID                               the live trade, once per ID
-  limit TICKER USD --nav NAV [--days N] [--slippage BPS]  dry run; --send --id to place
+  limit TICKER USD --nav NAV --slippage BPS [--days N]    dry run; --send --id to place
   orders                     open account limit and exit orders
   cancel ORDER_ID            dry run; --send --id to cancel a limit
   trade-status --id ID       outcome of a journalled trade or cover action, never sends anything
@@ -29615,6 +29616,7 @@ function trade(side) {
 			amountUsdg = Number(pos[2]);
 			if (!(amountUsdg > 0)) throw new CliError("buy TICKER USD: USD is a dollar amount, e.g. 10.");
 		}
+		if (side === "limit" && slippageBps == null) throw new CliError("limit needs --slippage BPS: at least the basket's buy cost + 20 bps and at most status's maxSlippageBps.");
 		if (flags.send && flags.dry) throw new CliError("Use --send or --dry, not both.");
 		const live = flags.send === true;
 		const id = live ? tradeId(flags.id) : null;

@@ -256,7 +256,7 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
     {
       title: "Build a delegated limit order or cancellation",
       description:
-        "UNSIGNED account Action for an approved agent key. Limit buys escrow USDG now and fill when 10-minute pool-average NAV <= triggerNav. Full amount counts toward today's turnover; expiry is capped to session expiry. Revocation does not cancel open orders: cancel them separately. Use bskts_account with the session account address to list orders. Host signs and relays using executeSessionOnce and a durable ID; preserve nonce after timeouts. No keys accepted or transactions sent by MCP.",
+        "UNSIGNED account Action for an approved agent key. Limit buys escrow USDG now and fill when 10-minute pool-average NAV <= triggerNav; slippageBps is required (>= basket buyCostBps + 20, <= session maxSlippageBps). Full amount counts toward today's turnover; expiry is capped to session expiry. Revocation does not cancel open orders: cancel them separately. Use bskts_account with the session account address to list orders. Host signs and relays using executeSessionOnce and a durable ID; preserve nonce after timeouts. No keys accepted or transactions sent by MCP.",
       inputSchema: {
         owner: address,
         key: address,
@@ -265,7 +265,19 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
         amountUsdg: z.number().min(5).optional(),
         triggerNav: z.number().positive().optional(),
         expiryDays: z.number().int().min(1).max(90).optional(),
-        slippageBps: z.number().int().min(50).max(1000).optional(),
+        // 2026-10-24: required for limit, as the API now requires it. Its old 50 bps
+        // default sat below yield baskets' fill cost, so their orders never filled
+        // and the USDG stayed escrowed until expiry. Kept a flat object rather than
+        // a union on kind: tools/list advertises a non-object schema as {}.
+        slippageBps: z
+          .number()
+          .int()
+          .min(50)
+          .max(1000)
+          .optional()
+          .describe(
+            "limit: REQUIRED fill tolerance, bps; at most the session's maxSlippageBps and at least the basket's buyCostBps + 20 (the app uses 300)",
+          ),
         orderId: z
           .string()
           .regex(/^0x[0-9a-fA-F]{64}$/)
@@ -296,10 +308,11 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
           !p.ticker ||
           p.amountUsdg === undefined ||
           p.triggerNav === undefined ||
+          p.slippageBps === undefined ||
           p.orderId !== undefined
         )
           throw new BsktsError(
-            "Limit needs ticker, amountUsdg and triggerNav; omit orderId.",
+            "Limit needs ticker, amountUsdg, triggerNav and slippageBps; omit orderId.",
             "BAD_REQUEST",
           );
         return delegatedOrder({
