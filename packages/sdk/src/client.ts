@@ -263,7 +263,8 @@ export class BsktsClient {
           triggerNav: number;
           expiryDays?: number;
           /** required (2026-10-24), 50-1000: at most the session's maxSlippageBps
-           * and at least the basket's buyCostBps + 20. The old 50 bps default left
+           * and at least the basket's limitMinSlippageBps (markets() or basket()). The
+           * "buyCostBps + 20" said before understated yield baskets. The old 50 bps default left
            * yield-basket orders unable to fill, their USDG escrowed until expiry. */
           slippageBps: number;
         }

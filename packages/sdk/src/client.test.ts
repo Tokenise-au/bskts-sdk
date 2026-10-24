@@ -157,6 +157,40 @@ describe("policy", () => {
   });
 });
 
+// 2026-10-24: zod objects drop unknown keys, so a field the API adds is
+// invisible until the schema names it; optional while older deployments lack it.
+describe("limitMinSlippageBps", () => {
+  const basket = {
+    ticker: "WAFER",
+    name: "",
+    thesis: "",
+    vault: ADDR,
+    rebalance: "",
+    mgmtFeeBps: 50,
+    targetWeights: {},
+    nav: 1,
+    change24h: 0,
+    buyCostBps: 30,
+    group: "",
+    risk: null,
+    constituents: [],
+  };
+  it("keeps the basket's limit minimum, and parses an API that has none", async () => {
+    expect(
+      (await client({ ...basket, limitMinSlippageBps: 170 }).basket("WAFER")).limitMinSlippageBps,
+    ).toBe(170);
+    expect((await client(basket).basket("WAFER")).limitMinSlippageBps).toBeUndefined();
+  });
+  it("keeps it on markets too", async () => {
+    const r = await client({
+      markets: [{ ticker: "WAFER", limitMinSlippageBps: 170 }],
+      asOfMs: 0,
+      live: true,
+    }).markets({ fields: ["ticker", "limitMinSlippageBps"] });
+    expect(r.markets[0]).toEqual({ ticker: "WAFER", limitMinSlippageBps: 170 });
+  });
+});
+
 describe("execute", () => {
   it("sends the approval, waits for it, then the action", async () => {
     const { s, sent } = sender();

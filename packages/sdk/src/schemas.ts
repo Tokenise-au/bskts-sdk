@@ -44,6 +44,10 @@ export const basketSummary = z.object({
   change24h: numOrNull,
   /** the real cost of a buy (pool fees + price impact), bps, on top of the 0.20% mint fee */
   buyCostBps: numOrNull,
+  /** the least slippageBps a delegated limit order accepts now: the routing cost or
+   * a yield basket's CLM reserve, plus the mint fee, never under 50. Optional until
+   * every API deployment returns it (2026-10-24). */
+  limitMinSlippageBps: num.optional(),
   group: z.string(),
   /** plain-language warning for higher-risk baskets */
   risk: z.string().nullable(),
@@ -66,6 +70,8 @@ export const market = z.object({
   nav: numOrNull,
   change24h: numOrNull,
   buyCostBps: numOrNull,
+  /** see basketSummary.limitMinSlippageBps */
+  limitMinSlippageBps: num.optional(),
 });
 export const marketsResponse = z.object({
   markets: z.array(market.partial()),

@@ -35,7 +35,7 @@ const RPC = "https://bskts.xyz/rpc";
 // keeps them equal). skills.sh tracks installs by content hash only, so this
 // is how a person or agent tells which build is running when debugging.
 // Bump it with any change under skills/ and tag main skill-v<version>.
-const SKILL_VERSION = "1.1.1";
+const SKILL_VERSION = "1.1.2";
 
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version
@@ -332,7 +332,7 @@ function trade(side) {
       // sat below yield baskets' fill cost, so their orders never filled.
       if (side === "limit" && slippageBps == null)
         throw new CliError(
-          "limit needs --slippage BPS: at least the basket's buy cost + 20 bps and at most status's maxSlippageBps.",
+          "limit needs --slippage BPS: at least the basket's limitMinSlippageBps (basket TICKER) and at most status's maxSlippageBps.",
         );
       // 2026-10-11: dry run unless --send (owner: "replace the starter and the
       // skill with dry run logic"). Live used to be the default and --dry the
