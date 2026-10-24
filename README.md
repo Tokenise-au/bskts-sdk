@@ -41,4 +41,4 @@ explicit network-fee ceiling. MCP exposes `bskts_agent_session` and
 [SDK account guide](packages/sdk/README.md#delegated-agents-bskts-accounts) and
 [MCP account guide](packages/mcp/README.md#autonomous-account-path).
 
-Limit-buy creation and cancellation are implemented for the next release. They require the updated SDK/MCP packages and matching API deployment; the published tools do not expose this addition yet. TWAP and Subscribe creation remain unsupported through agent tools.
+Agents can place and cancel limit buys (`@bskts/sdk` 0.7.2+, `@bskts/mcp` 0.4.2+, skill 1.1.2+). TWAP and Subscribe creation remain unsupported through agent tools.
