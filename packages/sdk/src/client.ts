@@ -262,7 +262,10 @@ export class BsktsClient {
           amountUsdg: number;
           triggerNav: number;
           expiryDays?: number;
-          slippageBps?: number;
+          /** required (2026-10-24), 50-1000: at most the session's maxSlippageBps
+           * and at least the basket's buyCostBps + 20. The old 50 bps default left
+           * yield-basket orders unable to fill, their USDG escrowed until expiry. */
+          slippageBps: number;
         }
       | { kind: "cancel"; orderId: Hex }
     ),
@@ -278,6 +281,11 @@ export class BsktsClient {
           (!Number.isInteger(p.expiryDays) || p.expiryDays < 1 || p.expiryDays > 90))
       )
         throw new BsktsError("Invalid limit amount, trigger or expiry.", "BAD_REQUEST");
+      if (!Number.isInteger(p.slippageBps) || p.slippageBps < 50 || p.slippageBps > 1000)
+        throw new BsktsError(
+          "slippageBps is required for a limit: an integer from 50 to 1000.",
+          "BAD_REQUEST",
+        );
       checkPolicy(this.policy, { ticker: p.ticker, usd: p.amountUsdg, slippageBps: p.slippageBps });
       if (this.policy.maxBuyCostBps != null)
         checkPolicy(this.policy, {
@@ -307,7 +315,7 @@ export class BsktsClient {
             p.triggerNav.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 18 }),
             18,
           ) ||
-        plan.action.slippageBps !== (p.slippageBps ?? Math.min(50, plan.status.maxSlippageBps)) ||
+        plan.action.slippageBps !== p.slippageBps ||
         terms.deadline > BigInt(Math.floor(Date.now() / 1000) + (p.expiryDays ?? 30) * 86400 + 60)
       )
         throw new BsktsError("Agent limit terms differ from the request.", "BAD_RESPONSE");

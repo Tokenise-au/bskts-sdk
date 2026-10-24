@@ -296,9 +296,9 @@ shows the cover held and its payouts, which the keeper makes automatically.
 
 Release status: implemented in source, awaiting package publication and the matching API deployment. The methods below describe the upcoming release.
 
-Use `buildAgentOrder({ kind: "limit", owner, key, ticker, amountUsdg, triggerNav, expiryDays?, slippageBps? })` for an unsigned resting buy.
+Use `buildAgentOrder({ kind: "limit", owner, key, ticker, amountUsdg, triggerNav, slippageBps, expiryDays? })` for an unsigned resting buy.
 The full budget is escrowed and counts against today's session turnover. The trigger must be positive and uses ten-minute pool-average NAV at or below the limit.
-Expiry is capped to the session; slippage defaults to 50 bps and cannot exceed the session cap. Grants below 50 bps cannot use the limit escrow.
+Expiry is capped to the session. `slippageBps` is required: an integer from 50 to 1000, at most the session's `maxSlippageBps` and at least the basket's `buyCostBps` + 20 (the bskts app uses 300). Out-of-range values are refused with `BAD_REQUEST` before fetching; the API answers `SESSION_LIMIT` (403) above the grant and `BAD_REQUEST` naming the minimum below the basket's fill cost. Grants below 50 bps cannot use the limit escrow.
 
 Use `orders(session.account)` to list open orders and `buildAgentOrder({ kind: "cancel", owner, key, orderId })` to cancel an account-owned limit, including an expired one.
 Cancellation refunds the same account, uses no turnover and does not replenish the daily cap. It may require a network fee.

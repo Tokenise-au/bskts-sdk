@@ -71,6 +71,7 @@ const request = {
   amountUsdg: 10,
   triggerNav: 98,
   expiryDays: 1,
+  slippageBps: 50,
 };
 const receipt = { hash: id, blockNumber: 1, gasUsed: 100 };
 const sender = () => ({
@@ -131,13 +132,26 @@ describe("delegated limit SDK", () => {
       code: "BAD_RESPONSE",
     });
   });
-  it("checks host budget before fetching and resolved slippage afterwards", async () => {
-    const { client, fetch } = api(response(), { maxUsdPerTrade: 9 });
-    await expect(client.buildAgentOrder(request)).rejects.toMatchObject({ code: "POLICY" });
-    expect(fetch).not.toHaveBeenCalled();
+  it("checks host budget and slippage before fetching", async () => {
+    for (const policy of [{ maxUsdPerTrade: 9 }, { maxSlippageBps: 25 }]) {
+      const { client, fetch } = api(response(), policy);
+      await expect(client.buildAgentOrder(request)).rejects.toMatchObject({ code: "POLICY" });
+      expect(fetch).not.toHaveBeenCalled();
+    }
+  });
+  // 2026-10-24: the API requires slippage; a missing or out-of-range value fails
+  // here instead of as the API's 400
+  it.each([undefined, 49, 1001, 50.5])("refuses slippageBps %s before fetching", async (slip) => {
+    const { client, fetch } = api();
     await expect(
-      api(response(), { maxSlippageBps: 25 }).client.buildAgentOrder(request),
-    ).rejects.toMatchObject({ code: "POLICY" });
+      client.buildAgentOrder({ ...request, slippageBps: slip as number }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("refuses a plan whose slippage differs from the request", async () => {
+    await expect(
+      api().client.buildAgentOrder({ ...request, slippageBps: 300 }),
+    ).rejects.toMatchObject({ code: "BAD_RESPONSE" });
   });
   it("decodes and signs cancellation with no budget or turnover", async () => {
     const r = response();

@@ -333,6 +333,7 @@ describe("delegated limit MCP", () => {
             ticker: "INDEX2",
             amountUsdg: 10,
             triggerNav: 98,
+            slippageBps: 50,
           },
         }),
       );
@@ -345,6 +346,13 @@ describe("delegated limit MCP", () => {
         arguments: { kind: "cancel", owner, key, orderId, ticker: "INDEX2" },
       });
       expect(invalid.isError).toBe(true);
+      // 2026-10-24: a limit without slippage is refused before the API is called
+      const unslipped = await mcp.callTool({
+        name: "bskts_agent_order",
+        arguments: { kind: "limit", owner, key, ticker: "INDEX2", amountUsdg: 10, triggerNav: 98 },
+      });
+      expect(unslipped.isError).toBe(true);
+      expect(text(unslipped).error).toMatch(/slippageBps/);
       expect(calls).toHaveLength(1);
       fixture.action.kind = 4;
       fixture.action.amount = "0";
