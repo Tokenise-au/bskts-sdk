@@ -3,6 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { BsktsClient, schemas, type Policy } from "@bskts/sdk";
 import { describe, expect, it } from "vitest";
 import { createBsktsMcpHandler, createBsktsServer, VERSION } from "./index";
+import { encodeAbiParameters, parseAbiParameters } from "viem";
 import pkg from "../package.json" with { type: "json" };
 
 const ADDR = "0x000000000000000000000000000000000000dEaD";
@@ -38,7 +39,7 @@ const text = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).c
 const PLAN = { approval: null, tx: { to: ADDR, data: "0x", value: "0" } };
 
 describe("bskts MCP server", () => {
-  it("lists eleven tools, with annotations, inside a token budget", async () => {
+  it("lists twelve tools, with annotations, inside a token budget", async () => {
     const mcp = await connect(api({}).client);
     const { tools } = await mcp.listTools();
     expect(tools.map((t) => t.name)).toEqual([
@@ -49,6 +50,7 @@ describe("bskts MCP server", () => {
       "bskts_sell",
       "bskts_order",
       "bskts_agent_session",
+      "bskts_agent_order",
       "bskts_agent_trade",
       "bskts_cover",
       "bskts_agent_cover",
@@ -58,7 +60,7 @@ describe("bskts MCP server", () => {
     // loaded into every conversation that has the server
     // 2026-10-11: 9,000 -> 12,000 for the two Weekend Cover tools (~2.5k with
     // their input schemas, trimmed to the rules a buyer needs)
-    expect(JSON.stringify(tools).length).toBeLessThan(12_000);
+    expect(JSON.stringify(tools).length).toBeLessThan(14_000);
     expect(mcp.getInstructions()).toMatch(/UNSIGNED/);
   });
 
@@ -182,7 +184,7 @@ describe("bskts MCP server", () => {
     expect(serverInfo.version).toBe(pkg.version);
     expect(VERSION).toBe(pkg.version);
     const list = await post({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-    expect((await list.json()).result.tools).toHaveLength(11);
+    expect((await list.json()).result.tools).toHaveLength(12);
   });
 });
 
@@ -266,5 +268,99 @@ describe("delegated agent MCP", () => {
     });
     expect(result.isError).toBe(true);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("delegated limit MCP", () => {
+  it("returns locally reconstructed typed data and rejects mixed parameters", async () => {
+    const owner = "0x1111111111111111111111111111111111111111";
+    const key = "0x3333333333333333333333333333333333333333";
+    const account = "0x2222222222222222222222222222222222222222";
+    const now = Math.floor(Date.now() / 1000);
+    const orderId = "0x" + "ab".repeat(32);
+    const fixture = {
+      ticker: "INDEX2",
+      status: {
+        owner,
+        key,
+        account,
+        chainId: 4663,
+        module: schemas.SESSION_MODULE,
+        deployed: true,
+        moduleEnabled: true,
+        coverEnabled: false,
+        active: true,
+        paused: false,
+        usdgWei: "20000000",
+        dailyLimitUsdg: "10000000",
+        remainingTodayUsdg: "10000000",
+        maxSlippageBps: 50,
+        validUntil: now + 604800,
+        approvalUrl: "https://bskts.xyz/account/agents",
+        relayerUrl: "https://bskts.xyz/relay/v1/account/execute",
+        revokeEffect: "Cancel separately.",
+      },
+      action: {
+        account,
+        key,
+        kind: 2,
+        vault: "0xC02b7A59846B77d0b1d0cfE8943D32c279ED292a",
+        amount: "10000000",
+        limit: "0",
+        slippageBps: 50,
+        data: encodeAbiParameters(
+          parseAbiParameters("(uint256,bool,uint64,uint16,uint16,uint16)"),
+          [[98n * 10n ** 18n, true, BigInt(now + 86400), 50, 100, 50]],
+        ),
+        nonce: "123",
+        deadline: now + 300,
+        fee: "0",
+      },
+      relayerUrl: "https://bskts.xyz/relay/v1/account/execute",
+      simulation: { ok: null, skipped: "Unsigned" },
+      typedData: { domain: { chainId: 1 } },
+    };
+    const { client, calls } = api({ "/v1/agent/order": fixture });
+    const mcp = await connect(client);
+    try {
+      const result = text(
+        await mcp.callTool({
+          name: "bskts_agent_order",
+          arguments: {
+            kind: "limit",
+            owner,
+            key,
+            ticker: "INDEX2",
+            amountUsdg: 10,
+            triggerNav: 98,
+          },
+        }),
+      );
+      expect(result.action.kind).toBe(2);
+      expect(result.typedData.domain.chainId).toBe(4663);
+      expect(result.terms.triggerNavE18).toBe("98000000000000000000");
+      expect(calls).toHaveLength(1);
+      const invalid = await mcp.callTool({
+        name: "bskts_agent_order",
+        arguments: { kind: "cancel", owner, key, orderId, ticker: "INDEX2" },
+      });
+      expect(invalid.isError).toBe(true);
+      expect(calls).toHaveLength(1);
+      fixture.action.kind = 4;
+      fixture.action.amount = "0";
+      fixture.action.slippageBps = 0;
+      fixture.action.data = encodeAbiParameters([{ type: "bytes32" }], [orderId as `0x${string}`]);
+      const cancelled = text(
+        await mcp.callTool({
+          name: "bskts_agent_order",
+          arguments: { kind: "cancel", owner, key, orderId },
+        }),
+      );
+      expect(cancelled.action.kind).toBe(4);
+      expect(cancelled.terms.orderId).toBe(orderId);
+      expect(calls).toHaveLength(2);
+    } finally {
+      await mcp.close();
+    }
   });
 });

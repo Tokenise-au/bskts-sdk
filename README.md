@@ -35,8 +35,10 @@ MIT
 ## Delegated agents
 
 For autonomous account trading after owner approval, use `agentSession` and
-`buildAgentTrade`, then `executeSession` with a host-provided signer and an
+`buildAgentTrade` or `buildAgentOrder`, then `executeSession` with a host-provided signer and an
 explicit network-fee ceiling. MCP exposes `bskts_agent_session` and
-`bskts_agent_trade`, remains unsigned, and never accepts private keys. See the
+`bskts_agent_trade` and `bskts_agent_order`, remains unsigned, and never accepts private keys. See the
 [SDK account guide](packages/sdk/README.md#delegated-agents-bskts-accounts) and
 [MCP account guide](packages/mcp/README.md#autonomous-account-path).
+
+Limit-buy creation and cancellation are implemented for the next release. They require the updated SDK/MCP packages and matching API deployment; the published tools do not expose this addition yet. TWAP and Subscribe creation remain unsupported through agent tools.

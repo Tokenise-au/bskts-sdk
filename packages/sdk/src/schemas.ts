@@ -317,9 +317,9 @@ export const agentSession = z.object({
 export const sessionAction = z.object({
   account: address,
   key: address,
-  kind: z.union([z.literal(0), z.literal(1)]),
+  kind: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(4)]),
   vault: address,
-  amount: uint256.refine((n) => n > 0n),
+  amount: uint256,
   limit: uint256,
   slippageBps: z.number().int().min(0).max(1000),
   data: hex.refine((h) => h.length % 2 === 0),
@@ -331,7 +331,7 @@ export const sessionAction = z.object({
     .max(2 ** 48 - 1),
   fee: uint256.refine((n) => n <= 10_000_000n),
 });
-export const agentTradePlan = z
+const agentPlanBase = z
   .object({
     ticker: z.string(),
     status: agentSession,
@@ -343,6 +343,17 @@ export const agentTradePlan = z
     message: "Action vault does not match the reviewed basket address; upgrade for new baskets.",
     path: ["action", "vault"],
   });
+export const agentTradePlan = agentPlanBase.refine(
+  (p) => (p.action.kind === 0 || p.action.kind === 1) && p.action.amount > 0n,
+  "Expected a market trade",
+);
+export const agentOrderPlan = agentPlanBase.refine(
+  (p) => p.action.kind === 2 || p.action.kind === 4,
+  "Expected a limit order or cancellation",
+);
+export const agentExecutionPlan = z.union([agentTradePlan, agentOrderPlan]);
+export type AgentOrderPlan = z.infer<typeof agentOrderPlan>;
+export type AgentExecutionPlan = z.infer<typeof agentExecutionPlan>;
 export const sessionReceipt = z.object({
   hash: hex.refine((h) => /^0x[0-9a-fA-F]{64}$/.test(h)),
   blockNumber: z.number().int().nonnegative(),

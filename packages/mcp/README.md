@@ -102,3 +102,12 @@ records so restarting an operation cannot repeat its trade. MCP continues to
 return unsigned plans; persistence, signing and reconciliation belong to the host.
 
 Agent keys authorise account trading, including Weekend Cover when it is enabled. Cover spending is counted separately against the same daily limit; underwriting additionally requires the account owner’s allowance. Individual key revocation leaves existing Cover listings open: withdraw them in My cover. The API’s moduleEnabled/coverEnabled fields report the current account setup.
+
+## Delegated limit orders
+
+Release status: implemented in source, awaiting package publication, the hosted MCP dependency update and API deployment. The currently published tool set does not include this addition.
+
+`bskts_agent_order` builds unsigned session Actions for `kind: "limit"` (owner, key, ticker, amountUsdg, positive triggerNav, optional expiryDays/slippageBps) and `kind: "cancel"` (owner, key, orderId).
+Read the session first, then use `bskts_account` with its bskts account address to list orders. Creation escrows the whole budget against today's turnover; cancellation returns it to the account without restoring turnover.
+Expiry cannot exceed the session expiry. The escrow needs at least 50 bps of slippage permission. Revocation leaves existing orders in place.
+The MCP reconstructs typed data locally and never signs or sends. A host signer should use `executeSessionOnce` with a durable ID; a placement receipt confirms creation, not a fill.
