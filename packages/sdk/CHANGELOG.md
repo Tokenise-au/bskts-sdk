@@ -1,5 +1,11 @@
 # @bskts/sdk
 
+## 0.7.0
+
+### Minor Changes
+
+- 08b9e9a: Add delegated limit-buy creation and cancellation, validate encoded order terms before signing, and retain durable nonce recovery. Expose unsigned MCP order tools and skill limit/orders/cancel commands.
+
 ## 0.6.0
 
 ### Minor Changes
