@@ -27776,6 +27776,10 @@ const basketSummary = object({
 	change24h: numOrNull,
 	/** the real cost of a buy (pool fees + price impact), bps, on top of the 0.20% mint fee */
 	buyCostBps: numOrNull,
+	/** the least slippageBps a delegated limit order accepts now: the routing cost or
+	* a yield basket's CLM reserve, plus the mint fee, never under 50. Optional until
+	* every API deployment returns it (2026-10-24). */
+	limitMinSlippageBps: num.optional(),
 	group: string(),
 	/** plain-language warning for higher-risk baskets */
 	risk: string().nullable()
@@ -27796,7 +27800,9 @@ const market = object({
 	ticker: string(),
 	nav: numOrNull,
 	change24h: numOrNull,
-	buyCostBps: numOrNull
+	buyCostBps: numOrNull,
+	/** see basketSummary.limitMinSlippageBps */
+	limitMinSlippageBps: num.optional()
 });
 const marketsResponse = object({
 	markets: array(market.partial()),
@@ -29348,7 +29354,7 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.1.1";
+const SKILL_VERSION = "1.1.2";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
@@ -29616,7 +29622,7 @@ function trade(side) {
 			amountUsdg = Number(pos[2]);
 			if (!(amountUsdg > 0)) throw new CliError("buy TICKER USD: USD is a dollar amount, e.g. 10.");
 		}
-		if (side === "limit" && slippageBps == null) throw new CliError("limit needs --slippage BPS: at least the basket's buy cost + 20 bps and at most status's maxSlippageBps.");
+		if (side === "limit" && slippageBps == null) throw new CliError("limit needs --slippage BPS: at least the basket's limitMinSlippageBps (basket TICKER) and at most status's maxSlippageBps.");
 		if (flags.send && flags.dry) throw new CliError("Use --send or --dry, not both.");
 		const live = flags.send === true;
 		const id = live ? tradeId(flags.id) : null;

@@ -256,7 +256,7 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
     {
       title: "Build a delegated limit order or cancellation",
       description:
-        "UNSIGNED account Action for an approved agent key. Limit buys escrow USDG now and fill when 10-minute pool-average NAV <= triggerNav; slippageBps is required (>= basket buyCostBps + 20, <= session maxSlippageBps). Full amount counts toward today's turnover; expiry is capped to session expiry. Revocation does not cancel open orders: cancel them separately. Use bskts_account with the session account address to list orders. Host signs and relays using executeSessionOnce and a durable ID; preserve nonce after timeouts. No keys accepted or transactions sent by MCP.",
+        "UNSIGNED account Action for an approved agent key. Limit buys escrow USDG now and fill when 10-minute pool-average NAV <= triggerNav; slippageBps is required (>= basket limitMinSlippageBps from bskts_basket, <= session maxSlippageBps). Full amount counts toward today's turnover; expiry is capped to session expiry. Revocation does not cancel open orders: cancel them separately. Use bskts_account with the session account address to list orders. Host signs and relays using executeSessionOnce and a durable ID; preserve nonce after timeouts. No keys accepted or transactions sent by MCP.",
       inputSchema: {
         owner: address,
         key: address,
@@ -276,7 +276,7 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
           .max(1000)
           .optional()
           .describe(
-            "limit: REQUIRED fill tolerance, bps; at most the session's maxSlippageBps and at least the basket's buyCostBps + 20 (the app uses 300)",
+            "limit: REQUIRED fill tolerance, bps; at most the session's maxSlippageBps and at least the basket's limitMinSlippageBps (bskts_basket; the app uses 300)",
           ),
         orderId: z
           .string()

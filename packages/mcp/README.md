@@ -109,5 +109,5 @@ Release status: implemented in source, awaiting package publication, the hosted 
 
 `bskts_agent_order` builds unsigned session Actions for `kind: "limit"` (owner, key, ticker, amountUsdg, positive triggerNav, slippageBps, optional expiryDays) and `kind: "cancel"` (owner, key, orderId).
 Read the session first, then use `bskts_account` with its bskts account address to list orders. Creation escrows the whole budget against today's turnover; cancellation returns it to the account without restoring turnover.
-slippageBps is required for a limit: 50-1000 bps, at most the session's maxSlippageBps and at least the basket's buyCostBps + 20 (the bskts app uses 300). Expiry cannot exceed the session expiry. The escrow needs at least 50 bps of slippage permission. Revocation leaves existing orders in place.
+slippageBps is required for a limit: 50-1000 bps, at most the session's maxSlippageBps and at least the basket's limitMinSlippageBps from `bskts_basket` (the bskts app uses 300). Expiry cannot exceed the session expiry. The escrow needs at least 50 bps of slippage permission. Revocation leaves existing orders in place.
 The MCP reconstructs typed data locally and never signs or sends. A host signer should use `executeSessionOnce` with a durable ID; a placement receipt confirms creation, not a fill.
