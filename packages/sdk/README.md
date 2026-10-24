@@ -294,7 +294,7 @@ shows the cover held and its payouts, which the keeper makes automatically.
 
 ## Delegated limit buys
 
-Release status: implemented in source, awaiting package publication and the matching API deployment. The methods below describe the upcoming release.
+Available since 0.7.2.
 
 Use `buildAgentOrder({ kind: "limit", owner, key, ticker, amountUsdg, triggerNav, slippageBps, expiryDays? })` for an unsigned resting buy.
 The full budget is escrowed and counts against today's session turnover. The trigger must be positive and uses ten-minute pool-average NAV at or below the limit.

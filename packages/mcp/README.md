@@ -105,7 +105,7 @@ Agent keys authorise account trading, including Weekend Cover when it is enabled
 
 ## Delegated limit orders
 
-Release status: implemented in source, awaiting package publication, the hosted MCP dependency update and API deployment. The currently published tool set does not include this addition.
+Available since 0.4.2 (the hosted MCP serves it too).
 
 `bskts_agent_order` builds unsigned session Actions for `kind: "limit"` (owner, key, ticker, amountUsdg, positive triggerNav, slippageBps, optional expiryDays) and `kind: "cancel"` (owner, key, orderId).
 Read the session first, then use `bskts_account` with its bskts account address to list orders. Creation escrows the whole budget against today's turnover; cancellation returns it to the account without restoring turnover.
