@@ -1,0 +1,27 @@
+{
+  "ticker": "DIGI64",
+  "vault": "0x63e5dFBEC475b3afA031be9031e73aCdb6F1d559",
+  "week": {
+    "id": 4,
+    "close": 1793390400,
+    "settle": 1793631600,
+    "cutoffAt": 1793389800,
+    "tradingOpen": true
+  },
+  "terms": {
+    "feeBps": 100,
+    "minCoverUsd": 10,
+    "rangeStepBps": 50,
+    "minFromBps": 50,
+    "minWidthBps": 100,
+    "maxToBps": 3000
+  },
+  "session": {
+    "maxTakePer1k": 29.7,
+    "maxRequestPer1k": 30,
+    "weeksAhead": 3,
+    "maxPremiumOfCover": 0.03
+  },
+  "ranges": [],
+  "note": "Prices are dollars per $1,000 of cover, the taker's fee extra. A range pays nothing above its fromBps drop and all of the cover's width at toBps."
+}

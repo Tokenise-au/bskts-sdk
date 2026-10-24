@@ -1,0 +1,75 @@
+{
+  "current": 4,
+  "now": 1792885365,
+  "paused": false,
+  "weeks": [
+    {
+      "id": 4,
+      "close": 1793390400,
+      "settle": 1793631600,
+      "cutoffAt": 1793389800,
+      "tradingOpen": true
+    },
+    {
+      "id": 5,
+      "close": 1793998800,
+      "settle": 1794236400,
+      "cutoffAt": 1793998200,
+      "tradingOpen": true
+    },
+    {
+      "id": 6,
+      "close": 1794603600,
+      "settle": 1794841200,
+      "cutoffAt": 1794603000,
+      "tradingOpen": true
+    }
+  ],
+  "terms": {
+    "feeBps": 100,
+    "minCoverUsd": 10,
+    "rangeStepBps": 50,
+    "minFromBps": 50,
+    "minWidthBps": 100,
+    "maxToBps": 3000
+  },
+  "session": {
+    "maxTakePer1k": 29.7,
+    "maxRequestPer1k": 30,
+    "weeksAhead": 3,
+    "maxPremiumOfCover": 0.03
+  },
+  "tickers": [
+    "DIGI64",
+    "MAG6",
+    "INDEX2",
+    "FRONTIER",
+    "CRYPTOEQ",
+    "OPUS",
+    "FABLE",
+    "ORBIT",
+    "MAXBETA",
+    "SILICON",
+    "ETHSTACK",
+    "HARD",
+    "BEDROCK"
+  ],
+  "presets": [
+    {
+      "fromBps": 200,
+      "toBps": 700
+    },
+    {
+      "fromBps": 300,
+      "toBps": 1000
+    },
+    {
+      "fromBps": 500,
+      "toBps": 1500
+    },
+    {
+      "fromBps": 50,
+      "toBps": 1000
+    }
+  ]
+}

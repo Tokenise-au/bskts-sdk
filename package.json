@@ -19,7 +19,8 @@
     "version-packages": "changeset version",
     "release": "pnpm run build && node scripts/stage-publish.mjs",
     "release:dry": "pnpm run build && node scripts/stage-publish.mjs --dry-run",
-    "check:skill": "pnpm --filter @bskts/skill-build run check:skill"
+    "check:skill": "pnpm --filter @bskts/skill-build run check:skill",
+    "contract:refresh": "node scripts/refresh-contract.mjs"
   },
   "volta": {
     "node": "24.21.0"

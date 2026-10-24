@@ -1,0 +1,1138 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "bskts API",
+    "version": "1.0.0",
+    "description": "Non-custodial read + construct API for the bskts protocol on Robinhood Chain. /v1/tx/* return unsigned calldata to sign.",
+    "contact": {
+      "url": "https://bskts.xyz/docs"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.bskts.xyz"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "AgentOrderRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "limit"
+              },
+              "owner": {
+                "description": "The owner's public login wallet (not the bskts account).",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{40}$"
+              },
+              "key": {
+                "description": "The agent's public signing address. Never send a private key.",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{40}$"
+              },
+              "ticker": {
+                "description": "Basket ticker, as GET /v1/baskets lists it (case-insensitive).",
+                "type": "string",
+                "minLength": 1
+              },
+              "amountUsdg": {
+                "type": "number",
+                "minimum": 5,
+                "maximum": 9007199300,
+                "description": "USDG escrowed now, in dollars. Counts against today's turnover in full; at least $5."
+              },
+              "triggerNav": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Fill when the 10-minute pool-average NAV per share is at or below this, in USDG."
+              },
+              "expiryDays": {
+                "default": 30,
+                "description": "Days the order rests, 1-90; never past the session's expiry.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 90
+              },
+              "slippageBps": {
+                "type": "integer",
+                "minimum": 50,
+                "maximum": 1000,
+                "description": "Widest the fill floor may open under NAV, in bps, mint fee and pool costs included. Required: at most the session's maxSlippageBps (GET /v1/agent/session) and at least the basket's limitMinSlippageBps (GET /v1/markets or /v1/baskets), or the order could never fill. The app uses 300."
+              },
+              "feeUsdg": {
+                "description": "Network fee the account repays, USDG base units. The relayer quotes it (402) when too low.",
+                "default": "0",
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            },
+            "required": [
+              "kind",
+              "owner",
+              "key",
+              "ticker",
+              "amountUsdg",
+              "triggerNav",
+              "slippageBps"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "cancel"
+              },
+              "owner": {
+                "description": "The owner's public login wallet (not the bskts account).",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{40}$"
+              },
+              "key": {
+                "description": "The agent's public signing address. Never send a private key.",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{40}$"
+              },
+              "orderId": {
+                "description": "Open limit order id, from GET /v1/orders/{account}.",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{64}$"
+              },
+              "feeUsdg": {
+                "description": "Network fee the account repays, USDG base units. The relayer quotes it (402) when too low.",
+                "default": "0",
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            },
+            "required": ["kind", "owner", "key", "orderId"],
+            "additionalProperties": false
+          }
+        ],
+        "title": "AgentOrderRequest",
+        "description": "A delegated limit buy, or the cancellation of one. Nothing is signed or sent."
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error", "code", "retryable"],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "BAD_REQUEST",
+              "UNKNOWN_BASKET",
+              "NOT_FOUND",
+              "METHOD_NOT_ALLOWED",
+              "NO_ROUTE",
+              "NO_REFERENCE",
+              "ORDER_NOT_OPEN",
+              "INSUFFICIENT_SHARES",
+              "INSUFFICIENT_FUNDS",
+              "SESSION_INACTIVE",
+              "SESSION_LIMIT",
+              "PAUSED",
+              "NOT_IMPLEMENTED",
+              "UPSTREAM",
+              "SERVER",
+              "NOT_A_HOLDER",
+              "NO_COVER",
+              "COVER_CLOSED"
+            ]
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Tx": {
+        "type": "object",
+        "required": ["to", "data", "value"],
+        "properties": {
+          "to": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string",
+            "description": "wei, decimal string"
+          }
+        }
+      },
+      "TxPlan": {
+        "type": "object",
+        "required": ["approval", "tx"],
+        "properties": {
+          "approval": {
+            "description": "send first and wait for it to be mined; null when none is needed",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "tx": {
+            "$ref": "#/components/schemas/Tx"
+          },
+          "simulation": {
+            "type": "object",
+            "description": "dry run of tx as the sender: ok true (passed), false (would revert: reason), null (not run: skipped)",
+            "properties": {
+              "ok": {
+                "type": ["boolean", "null"]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "skipped": {
+                "type": "string"
+              },
+              "gas": {
+                "type": "string"
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/agent/session": {
+      "get": {
+        "summary": "Resolve owner's bskts account and read live agent key permissions (no-store)",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account, active/paused, moduleEnabled, coverEnabled, USDG balance, remaining basket turnover, max slippage, expiry, owner approval URL and relayer URL. Cover spending is counted separately."
+          },
+          "400": {
+            "description": "Invalid public addresses"
+          },
+          "502": {
+            "description": "RPC unavailable"
+          }
+        }
+      }
+    },
+    "/v1/agent/order": {
+      "post": {
+        "summary": "Build an unsigned delegated limit buy or cancellation; no signing or sending",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Unsigned action, typedData, live status, decoded terms, relayerUrl and unsigned simulation status. Placement is not a fill. List via /v1/orders/{account}."
+          },
+          "400": {
+            "description": "BAD_REQUEST: the error names the field and its range, e.g. a missing slippageBps or one under the basket's fill cost"
+          },
+          "403": {
+            "description": "SESSION_INACTIVE, or SESSION_LIMIT: turnover, or slippage outside the owner's grant (the error gives the grant's maximum); wrong order owner"
+          },
+          "422": {
+            "description": "NO_REFERENCE, INSUFFICIENT_FUNDS or ORDER_NOT_OPEN"
+          },
+          "503": {
+            "description": "PAUSED"
+          }
+        }
+      }
+    },
+    "/v1/agent/trade": {
+      "post": {
+        "summary": "Build an unsigned delegated buy/sell Action; never grants or widens permissions",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["owner", "key", "ticker", "side"],
+                "properties": {
+                  "owner": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "side": {
+                    "enum": ["buy", "sell"]
+                  },
+                  "amountUsdg": {
+                    "type": "number",
+                    "minimum": 5,
+                    "description": "buy budget in dollars; must mint at least $5 of basket value"
+                  },
+                  "shares": {
+                    "type": "string",
+                    "pattern": "^[0-9]+$",
+                    "description": "sell exact shares, 1e18 base units"
+                  },
+                  "slippageBps": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "description": "omitted: 50, or the grant's maxSlippageBps if lower"
+                  },
+                  "feeUsdg": {
+                    "type": "string",
+                    "pattern": "^[0-9]+$",
+                    "default": "0",
+                    "description": "Signed network fee, USDG base units; respect host fee cap"
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": ["amountUsdg"],
+                    "properties": {
+                      "side": {
+                        "const": "buy"
+                      }
+                    },
+                    "not": {
+                      "required": ["shares"]
+                    }
+                  },
+                  {
+                    "required": ["shares"],
+                    "properties": {
+                      "side": {
+                        "const": "sell"
+                      }
+                    },
+                    "not": {
+                      "required": ["amountUsdg"]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Unsigned action, typedData, live status, relayerUrl; simulation awaits the signed Action"
+          },
+          "400": {
+            "description": "Invalid trade"
+          },
+          "403": {
+            "description": "SESSION_INACTIVE or SESSION_LIMIT: owner approval required"
+          },
+          "422": {
+            "description": "NO_REFERENCE, insufficient funds/shares"
+          },
+          "503": {
+            "description": "PAUSED"
+          }
+        }
+      }
+    },
+    "/v1/agent/cover": {
+      "post": {
+        "summary": "Build an unsigned CoverAction for the account's session key: take offers, request cover, or cancel the account's listing. Never underwrites, grants or widens permissions",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["owner", "key", "action"],
+                "properties": {
+                  "owner": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "enum": ["take", "request", "cancel"]
+                  },
+                  "ticker": {
+                    "type": "string",
+                    "description": "take/request: a basket with a cover market"
+                  },
+                  "week": {
+                    "type": "integer",
+                    "description": "omitted: the week trading now (GET /v1/cover/weeks)"
+                  },
+                  "fromBps": {
+                    "type": "integer",
+                    "description": "drop where the cover starts paying, bps (300 = -3%)"
+                  },
+                  "toBps": {
+                    "type": "integer",
+                    "description": "drop where it pays in full, bps"
+                  },
+                  "coverUsd": {
+                    "type": "integer",
+                    "description": "cover, whole dollars"
+                  },
+                  "maxPricePer1k": {
+                    "type": "number",
+                    "description": "take: dearest offer to take, $ per $1,000 (capped at the session's 3% ceiling)"
+                  },
+                  "allowPartial": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "take: buy what the book has when it holds less than coverUsd"
+                  },
+                  "pricePer1k": {
+                    "type": "number",
+                    "description": "request: $ per $1,000, whole cents, at most 30"
+                  },
+                  "listingId": {
+                    "type": "string",
+                    "pattern": "^[0-9]+$",
+                    "description": "cancel: the listing's id"
+                  },
+                  "feeUsdg": {
+                    "type": "string",
+                    "pattern": "^[0-9]+$",
+                    "default": "0",
+                    "description": "network fee in USDG base units; set from the relayer's 402 quote (cancels: none)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "intent, summary (cover, premium, fee, cost), unsigned action, typedData (domain 'bskts cover'), live status, coverRemainingTodayUsdg, relayerUrl; simulation awaits the signed action"
+          },
+          "400": {
+            "description": "Invalid terms"
+          },
+          "403": {
+            "description": "SESSION_INACTIVE (approval, or Cover not turned on) or SESSION_LIMIT"
+          },
+          "422": {
+            "description": "NOT_A_HOLDER, NO_COVER, COVER_CLOSED, INSUFFICIENT_FUNDS, ORDER_NOT_OPEN"
+          },
+          "503": {
+            "description": "PAUSED"
+          }
+        }
+      }
+    },
+    "/v1/cover/weeks": {
+      "get": {
+        "summary": "Weekend Cover weeks a session may buy (the one trading now and the next two), the contract's terms, the session's price limits, cover tickers and preset ranges",
+        "responses": {
+          "200": {
+            "description": "current, weeks, terms, session, tickers, presets"
+          }
+        }
+      }
+    },
+    "/v1/cover/book/{ticker}": {
+      "get": {
+        "summary": "Open cover offers on a basket by range, each range's payout history (fairPer1k) and, with coverUsd, a quote of what taking it costs",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "week",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "coverUsd",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "fromBps",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "toBps",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": false,
+            "description": "the buyer's bskts account: its own offers are marked and left out of quotes",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "week, terms, session, ranges[{offers, depthUsd, history, quote}]"
+          },
+          "404": {
+            "description": "UNKNOWN_BASKET"
+          },
+          "422": {
+            "description": "COVER_CLOSED"
+          }
+        }
+      }
+    },
+    "/v1/cover/positions/{account}": {
+      "get": {
+        "summary": "A bskts account's cover: positions with the weekend's move and payouts (the keeper pays automatically), and its open listings",
+        "parameters": [
+          {
+            "name": "account",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "positions, listings"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Liveness",
+        "responses": {
+          "200": {
+            "description": "{ok: true}"
+          }
+        }
+      }
+    },
+    "/v1/baskets": {
+      "get": {
+        "summary": "List baskets with live marks (nav, 24h change, buyCostBps, limitMinSlippageBps, group, risk)",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/v1/baskets/{ticker}": {
+      "get": {
+        "summary": "Basket detail + constituents (address, target weight, live price)",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          },
+          "404": {
+            "description": "unknown basket"
+          }
+        }
+      }
+    },
+    "/v1/indexes": {
+      "get": {
+        "summary": "Alias of /v1/baskets",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/v1/indexes/{ticker}": {
+      "get": {
+        "summary": "Alias of /v1/baskets/{ticker}",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          },
+          "404": {
+            "description": "unknown basket"
+          }
+        }
+      }
+    },
+    "/v1/stats": {
+      "get": {
+        "summary": "Protocol totals",
+        "responses": {
+          "200": {
+            "description": "{indexes, volumeAllTime, tvl, asOfMs, live}"
+          }
+        }
+      }
+    },
+    "/v1/markets": {
+      "get": {
+        "summary": "Live nav/change/cost for all + prices",
+        "parameters": [
+          {
+            "name": "fields",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "comma-separated keys to keep per market, e.g. ticker,nav,buyCostBps"
+          },
+          {
+            "name": "prices",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["0"]
+            },
+            "description": "0 drops the constituent prices"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/v1/nav/{ticker}/history": {
+      "get": {
+        "summary": "NAV candles",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "res",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["1m", "1h", "1d"]
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["ohlc", "close", "summary"]
+            },
+            "description": "summary: {change, high, low, maxDrawdown, volatility} (fractions); close: [t, c] pairs"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/v1/wallet/{address}": {
+      "get": {
+        "summary": "ETH (gas) and USDG balances and basket shares held: can this wallet trade now?",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{address, chainId, eth, ethWei, usdg, usdgWei, holdings: [{ticker, sharesWei}], tradeGasEth, gasOk, note?}"
+          }
+        }
+      }
+    },
+    "/v1/positions/{address}": {
+      "get": {
+        "summary": "Wallet positions + PnL; sharesWei / walletSharesWei are exact (send them back as-is)",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/v1/orders/{address}": {
+      "get": {
+        "summary": "Open orders: exits (kind stop_loss | take_profit | bracket) and limit / market buys (kind limit_buy), each with its escrow",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/v1/strategies/{address}": {
+      "get": {
+        "summary": "Strategy execution totals",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "summary": "Every public job executable right now (triggered stops / take-profits, triggered limit buys, due Subscribe / TWAP buys), each with calldata, the executor fee and armData",
+        "responses": {
+          "200": {
+            "description": "{asOf, jobs: [{type, contract, id, ticker, vault, feeUsdg, slippageBps, tx, armData}], skipped, note}"
+          }
+        }
+      }
+    },
+    "/v1/herald/calls": {
+      "get": {
+        "summary": "Herald's daily-wrap market calls and how each was scored (open until judged, then hit / miss / void), newest first",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365,
+              "default": 30
+            },
+            "description": "calls made in the last N days"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{days, calls: [{created_at, session, resolves_on, call, status, scored_at}]}"
+          },
+          "400": {
+            "description": "days out of range"
+          }
+        }
+      }
+    },
+    "/v1/leverage/sell-routes": {
+      "get": {
+        "summary": "Sell routes for N basket shares (SwapCall[] for liquidations and levered exits)",
+        "parameters": [
+          {
+            "name": "vault",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shares",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "uint, 18 decimals"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{vault, shares, zapper, router, swaps, legs, unrouted, note}"
+          },
+          "400": {
+            "description": "unknown vault, or shares missing / above supply"
+          }
+        }
+      }
+    },
+    "/v1/tx/buy": {
+      "post": {
+        "summary": "Build unsigned zap-in (buy)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ticker", "amountUsdg", "address"],
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "amountUsdg": {
+                    "type": "number"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "slippageBps": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{approval?, tx, amountInUsdg, minShares, estShares, legs}"
+          },
+          "422": {
+            "description": "a constituent has no route: never a partial buy"
+          }
+        }
+      }
+    },
+    "/v1/tx/sell": {
+      "post": {
+        "summary": "Build unsigned sale of basket shares for USDG (Zapper.zapOut), in one transaction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ticker", "address", "shares"],
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "shares": {
+                    "type": "string",
+                    "description": "1e18 integer string (walletSharesWei), or \"max\""
+                  },
+                  "fraction": {
+                    "type": "number",
+                    "description": "with shares \"max\": the part to sell, (0, 1]"
+                  },
+                  "slippageBps": {
+                    "type": "integer",
+                    "default": 50
+                  },
+                  "simulate": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "TxPlan + {sharesWei, expectedUsdg, minOutUsdg, legs} (USDG amounts in 1e6 base units)"
+          },
+          "400": {
+            "description": "INSUFFICIENT_SHARES, UNKNOWN_BASKET or BAD_REQUEST"
+          },
+          "422": {
+            "description": "NO_ROUTE: a constituent has no sell route (never a partial sale)"
+          }
+        }
+      }
+    },
+    "/v1/tx/exit": {
+      "post": {
+        "summary": "build unsigned stop/take-profit/bracket",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ticker", "address", "shares"],
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "shares": {
+                    "type": "string"
+                  },
+                  "stopNav": {
+                    "type": "number"
+                  },
+                  "tpNav": {
+                    "type": "number"
+                  },
+                  "expiryDays": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{approval?, tx}"
+          }
+        }
+      }
+    },
+    "/v1/tx/limit": {
+      "post": {
+        "summary": "Build unsigned limit/market buy intent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ticker", "amountUsdg", "address"],
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "amountUsdg": {
+                    "type": "number"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "triggerNav": {
+                    "type": "number"
+                  },
+                  "expiryDays": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{approval?, tx}"
+          }
+        }
+      }
+    },
+    "/v1/tx/redeem": {
+      "post": {
+        "summary": "Build unsigned in-kind redeem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ticker", "address", "shares"],
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "shares": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": ["inkind"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{tx}"
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "summary": "MCP server (Streamable HTTP, stateless, JSON responses): the bskts tools for agents (markets, basket, account, buy, sell, order, guide). Unsigned only. JSON-RPC 2.0 body per the Model Context Protocol.",
+        "responses": {
+          "200": {
+            "description": "JSON-RPC response"
+          }
+        }
+      }
+    },
+    "/v1/tx/cancel": {
+      "post": {
+        "summary": "Build unsigned order withdraw. escrow is optional: when omitted it is looked up from the order index",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["orderId"],
+                "properties": {
+                  "orderId": {
+                    "type": "string"
+                  },
+                  "escrow": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string",
+                    "description": "the owner, to simulate the cancel"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{tx}"
+          },
+          "400": {
+            "description": "escrow given but not a bskts escrow"
+          },
+          "404": {
+            "description": "order not in the index: pass escrow"
+          },
+          "409": {
+            "description": "order already filled or cancelled"
+          }
+        }
+      }
+    }
+  }
+}

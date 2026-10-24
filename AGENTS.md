@@ -28,7 +28,8 @@ are how agents and developers trade it.
 ## Always
 
 - Response shapes live in `packages/sdk/src/schemas.ts` (Zod); types come from them. When the
-  API changes, change the schema, not a hand-written interface.
+  API changes, change the schema, not a hand-written interface. Run `pnpm run contract:refresh`
+  first (README "API contract"): the contract tests fail until the SDK and MCP match the API.
 - On-chain amounts are `bigint`; dollars and fractions are `number`.
 - New pure logic gets a Vitest test next to it (`*.test.ts`), no network.
 - Before finishing: `pnpm run build && pnpm run typecheck && pnpm test && pnpm run lint &&
