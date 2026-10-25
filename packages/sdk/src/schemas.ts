@@ -48,6 +48,9 @@ export const basketSummary = z.object({
    * a yield basket's CLM reserve, plus the mint fee, never under 50. Optional until
    * every API deployment returns it (2026-10-24). */
   limitMinSlippageBps: num.optional(),
+  /** the same for a delegated exit (stop-loss / take-profit): the sale's cost
+   * plus the 0.20% sell fee, never under 50 (2026-10-25). Optional likewise. */
+  exitMinSlippageBps: num.optional(),
   group: z.string(),
   /** plain-language warning for higher-risk baskets */
   risk: z.string().nullable(),
@@ -72,6 +75,8 @@ export const market = z.object({
   buyCostBps: numOrNull,
   /** see basketSummary.limitMinSlippageBps */
   limitMinSlippageBps: num.optional(),
+  /** see basketSummary.exitMinSlippageBps */
+  exitMinSlippageBps: num.optional(),
 });
 export const marketsResponse = z.object({
   markets: z.array(market.partial()),
@@ -323,7 +328,15 @@ export const agentSession = z.object({
 export const sessionAction = z.object({
   account: address,
   key: address,
-  kind: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(4)]),
+  // 2026-10-25: + 3 (Exit) and 5 (CancelExit)
+  kind: z.union([
+    z.literal(0),
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+  ]),
   vault: address,
   amount: uint256,
   limit: uint256,
@@ -337,6 +350,79 @@ export const sessionAction = z.object({
     .max(2 ** 48 - 1),
   fee: uint256.refine((n) => n <= 10_000_000n),
 });
+// 2026-10-25: what an order plan means, computed by the API so the SDK, MCP
+// and skill show the same numbers. Triggers are on NAV: price returns, not net
+// profit. Display only: the signed terms are decodeAgentOrder's to check.
+const pct = numOrNull;
+const exitEdge = z.object({
+  edge: z.enum(["stop", "takeProfit"]),
+  nav: num,
+  /** % from navNow (the 10-minute pool-average NAV the trigger compares with) */
+  fromNowPct: num,
+  /** % from the account's average entry NAV, before costs */
+  priceReturnPct: pct,
+  /** less the basket's cost mark, the 0.20% sell fee and the filler fee */
+  estNetReturnPct: pct,
+  /** less maxSlippageBps (which includes the sell fee) and the filler fee, at the trigger */
+  worstNetReturnPct: pct,
+  estProceedsUsdg: numOrNull,
+  worstProceedsUsdg: num,
+});
+const cancelEdge = z.object({ nav: num, fromNowPct: numOrNull }).nullable();
+export const agentOrderPreview = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("limit"),
+    basis: z.string(),
+    navNow: num,
+    triggerNav: num,
+    direction: z.enum(["below", "above"]),
+    fromNowPct: num,
+    /** the trigger is already met: it can fill as soon as it is placed */
+    fillsNow: z.boolean(),
+    /** the most per share at the trigger: max slippage (mint fee included) and filler fee */
+    worstPricePerShare: num,
+    worstFromNowPct: num,
+    worstShares: num,
+    costs: z.object({ mintFeeBps: num, fillerFeeBps: num, maxSlippageBps: num }),
+    notes: z.array(z.string()),
+  }),
+  z.object({
+    kind: z.literal("exit"),
+    basis: z.string(),
+    navNow: num,
+    shares: num,
+    /** average NAV per share paid (GET /v1/positions), buy costs not included */
+    avgEntry: numOrNull,
+    breakEvenNav: numOrNull,
+    triggers: z.array(exitEdge),
+    costs: z.object({
+      sellFeeBps: num,
+      routeCostBps: numOrNull,
+      fillerFeeBps: num,
+      maxSlippageBps: num,
+    }),
+    notes: z.array(z.string()),
+  }),
+  z.object({
+    kind: z.literal("cancel"),
+    basis: z.string(),
+    navNow: numOrNull,
+    triggerNav: num,
+    direction: z.enum(["below", "above"]),
+    fromNowPct: numOrNull,
+    refundUsdg: num,
+  }),
+  z.object({
+    kind: z.literal("cancel-exit"),
+    basis: z.string(),
+    navNow: numOrNull,
+    stop: cancelEdge,
+    takeProfit: cancelEdge,
+    returnsShares: num,
+    returnsSharesWei: wei,
+  }),
+]);
+export type AgentOrderPreview = z.infer<typeof agentOrderPreview>;
 const agentPlanBase = z
   .object({
     ticker: z.string(),
@@ -344,6 +430,8 @@ const agentPlanBase = z
     action: sessionAction,
     relayerUrl: z.literal("https://bskts.xyz/relay/v1/account/execute"),
     simulation,
+    // optional: plans journalled before 2026-10-25 have none; buildAgentOrder requires it
+    preview: agentOrderPreview.optional(),
   })
   .refine((plan) => isAgentVault(plan.ticker, plan.action.vault), {
     message: "Action vault does not match the reviewed basket address; upgrade for new baskets.",
@@ -354,8 +442,8 @@ export const agentTradePlan = agentPlanBase.refine(
   "Expected a market trade",
 );
 export const agentOrderPlan = agentPlanBase.refine(
-  (p) => p.action.kind === 2 || p.action.kind === 4,
-  "Expected a limit order or cancellation",
+  (p) => p.action.kind >= 2,
+  "Expected a limit or exit order, or a cancellation",
 );
 export const agentExecutionPlan = z.union([agentTradePlan, agentOrderPlan]);
 export type AgentOrderPlan = z.infer<typeof agentOrderPlan>;

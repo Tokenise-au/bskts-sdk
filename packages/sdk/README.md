@@ -306,3 +306,12 @@ Both plans work with `executeSessionOnce` and a durable store, just like market 
 
 `decodeAgentOrder(plan)` reads the signed terms; `limitOrderId(receipt.logs)` reads a placement ID from the pinned escrow's event without waiting for indexing.
 Creation is not a fill. The open-order list is not fill history. Revocation does not cancel existing orders; cancel before revoking or use the owner's wallet afterwards.
+
+## Delegated exits, buy-above limits and previews
+
+Available since 0.8.0.
+
+- `buildAgentOrder({ kind: "exit", owner, key, ticker, shares, stopNav?, tpNav?, slippageBps, expiryDays? })`: an unsigned stop-loss (sells when the ten-minute pool-average NAV is at or below `stopNav`), take-profit (at or above `tpNav`) or bracket (both; `stopNav < tpNav`, one fill closes it). `shares` is a bigint of 1e18 units or `"max"` (every share the account holds outside orders). The shares are escrowed and count against today's turnover at their value (the higher of spot and ten-minute NAV). A stop at or above the current NAV, or a take-profit at or below it, is refused: it would sell at once. `slippageBps` is required: 50-1000, within the grant, at least the basket's `exitMinSlippageBps`. The network fee comes from the account's USDG.
+- `buildAgentOrder({ kind: "cancel-exit", owner, key, orderId })` returns an exit's shares. Limit and exit IDs are numbered apart and can be equal: use the kind `orders()` reports. `exitOrderId(receipt.logs)` reads a new exit's ID.
+- `triggerBelow: false` on a limit buys at or above `triggerNav` instead of at or below it.
+- Every order plan has `preview` (`AgentOrderPreview`), computed by the API so the SDK, MCP and skill show the same numbers: `navNow` (the ten-minute NAV the triggers compare with), each trigger's `fromNowPct`; for an exit the account's `avgEntry` and, per edge, `priceReturnPct`, `estNetReturnPct`, `worstNetReturnPct` (after the 0.20% sell fee, the filler fee and `maxSlippageBps`, which includes the sell fee), proceeds and `breakEvenNav`; for a limit `worstPricePerShare` and `fillsNow`. `describePreview(plan.preview)` renders it as lines. **Triggers are on NAV**: a take-profit 5% over NAV is a 5% price move, not 5% net profit. Show the preview before signing.

@@ -319,6 +319,20 @@ describe("delegated limit MCP", () => {
       relayerUrl: "https://bskts.xyz/relay/v1/account/execute",
       simulation: { ok: null, skipped: "Unsigned" },
       typedData: { domain: { chainId: 1 } },
+      preview: {
+        kind: "limit",
+        basis: "Triggers are on NAV per share.",
+        navNow: 100,
+        triggerNav: 98,
+        direction: "below",
+        fromNowPct: -2,
+        fillsNow: false,
+        worstPricePerShare: 99.5,
+        worstFromNowPct: -0.5,
+        worstShares: 0.1005,
+        costs: { mintFeeBps: 20, fillerFeeBps: 100, maxSlippageBps: 50 },
+        notes: [],
+      } as Record<string, unknown>,
     };
     const { client, calls } = api({ "/v1/agent/order": fixture });
     const mcp = await connect(client);
@@ -338,6 +352,9 @@ describe("delegated limit MCP", () => {
         }),
       );
       expect(result.action.kind).toBe(2);
+      // 2026-10-25: the preview leads, as text the model shows before signing
+      expect(Object.keys(result)[0]).toBe("previewText");
+      expect(result.previewText[0]).toMatch(/^Limit buy when NAV <= 98: -2\.00% from NAV 100 now/);
       expect(result.typedData.domain.chainId).toBe(4663);
       expect(result.terms.triggerNavE18).toBe("98000000000000000000");
       expect(calls).toHaveLength(1);
@@ -354,10 +371,72 @@ describe("delegated limit MCP", () => {
       expect(unslipped.isError).toBe(true);
       expect(text(unslipped).error).toMatch(/slippageBps/);
       expect(calls).toHaveLength(1);
+      // an exit: shares "max", a bracket, its preview against the entry
+      fixture.action.kind = 3;
+      fixture.action.amount = (10n ** 18n).toString();
+      fixture.action.data = encodeAbiParameters(
+        parseAbiParameters("(uint256,uint256,uint64,uint16,uint16,uint16)"),
+        [[90n * 10n ** 18n, 110n * 10n ** 18n, BigInt(now + 86400), 50, 28, 50]],
+      );
+      fixture.preview = {
+        kind: "exit",
+        basis: "Triggers are on NAV per share.",
+        navNow: 100,
+        shares: 1,
+        avgEntry: null,
+        breakEvenNav: null,
+        triggers: [
+          {
+            edge: "takeProfit",
+            nav: 110,
+            fromNowPct: 10,
+            priceReturnPct: null,
+            estNetReturnPct: null,
+            worstNetReturnPct: null,
+            estProceedsUsdg: 109.2,
+            worstProceedsUsdg: 109.1,
+          },
+        ],
+        costs: { sellFeeBps: 20, routeCostBps: 30, fillerFeeBps: 28, maxSlippageBps: 50 },
+        notes: [],
+      };
+      const exitArgs = { kind: "exit", owner, key, ticker: "INDEX2", shares: "max" };
+      const noEdge = await mcp.callTool({
+        name: "bskts_agent_order",
+        arguments: { ...exitArgs, slippageBps: 50 },
+      });
+      expect(noEdge.isError).toBe(true);
+      const mixed = await mcp.callTool({
+        name: "bskts_agent_order",
+        arguments: { ...exitArgs, tpNav: 110, slippageBps: 50, amountUsdg: 10 },
+      });
+      expect(mixed.isError).toBe(true);
+      expect(calls).toHaveLength(1);
+      const placed = text(
+        await mcp.callTool({
+          name: "bskts_agent_order",
+          arguments: { ...exitArgs, stopNav: 90, tpNav: 110, slippageBps: 50 },
+        }),
+      );
+      expect(placed.action.kind).toBe(3);
+      expect(placed.terms).toMatchObject({ kind: "exit", tpNavE18: "110000000000000000000" });
+      expect(placed.previewText[1]).toBe(
+        "Take-profit at NAV 110: +10.00% from now; worst proceeds 109.1 USDG.",
+      );
+      expect(calls).toHaveLength(2);
       fixture.action.kind = 4;
       fixture.action.amount = "0";
       fixture.action.slippageBps = 0;
       fixture.action.data = encodeAbiParameters([{ type: "bytes32" }], [orderId as `0x${string}`]);
+      fixture.preview = {
+        kind: "cancel",
+        basis: "Triggers are on NAV per share.",
+        navNow: 100,
+        triggerNav: 98,
+        direction: "below",
+        fromNowPct: -2,
+        refundUsdg: 10,
+      };
       const cancelled = text(
         await mcp.callTool({
           name: "bskts_agent_order",
@@ -366,7 +445,7 @@ describe("delegated limit MCP", () => {
       );
       expect(cancelled.action.kind).toBe(4);
       expect(cancelled.terms.orderId).toBe(orderId);
-      expect(calls).toHaveLength(2);
+      expect(calls).toHaveLength(3);
     } finally {
       await mcp.close();
     }

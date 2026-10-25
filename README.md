@@ -41,4 +41,4 @@ explicit network-fee ceiling. MCP exposes `bskts_agent_session` and
 [SDK account guide](packages/sdk/README.md#delegated-agents-bskts-accounts) and
 [MCP account guide](packages/mcp/README.md#autonomous-account-path).
 
-Agents can place and cancel limit buys (`@bskts/sdk` 0.7.2+, `@bskts/mcp` 0.4.2+, skill 1.1.2+). TWAP and Subscribe creation remain unsupported through agent tools.
+Agents can place and cancel limit buys (`@bskts/sdk` 0.7.2+, `@bskts/mcp` 0.4.2+, skill 1.1.2+), and stop-losses, take-profits, brackets and buy-above limits, each with a preview of what its triggers mean (`@bskts/sdk` 0.8.0+, `@bskts/mcp` 0.5.0+, skill 1.2.0+). TWAP and Subscribe creation remain unsupported through agent tools.

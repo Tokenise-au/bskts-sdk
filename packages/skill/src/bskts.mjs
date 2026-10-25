@@ -35,7 +35,7 @@ const RPC = "https://bskts.xyz/rpc";
 // keeps them equal). skills.sh tracks installs by content hash only, so this
 // is how a person or agent tells which build is running when debugging.
 // Bump it with any change under skills/ and tag main skill-v<version>.
-const SKILL_VERSION = "1.1.2";
+const SKILL_VERSION = "1.2.0";
 
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version
@@ -47,9 +47,12 @@ const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   buy TICKER USD [--slippage BPS]                          dry run: builds and simulates, sends nothing
   sell TICKER (--shares WEI|max | --fraction 0.5) [...]     dry run
   buy|sell ... --send --id ID                               the live trade, once per ID
-  limit TICKER USD --nav NAV --slippage BPS [--days N]    dry run; --send --id to place
+  limit TICKER USD --nav NAV --slippage BPS [--above] [--days N]   dry run + preview; --send --id to place
+  exit TICKER (--shares WEI|max | --fraction 0.5) [--stop NAV] [--tp NAV] --slippage BPS [--days N]
+                             stop-loss / take-profit / bracket: dry run + preview; --send --id to place
   orders                     open account limit and exit orders
-  cancel ORDER_ID            dry run; --send --id to cancel a limit
+  cancel ORDER_ID            dry run; --send --id to cancel a limit (kind limit_buy)
+  cancel-exit ORDER_ID       dry run; --send --id to cancel an exit (stop_loss / take_profit / bracket)
   trade-status --id ID       outcome of a journalled trade or cover action, never sends anything
 Weekend Cover (buying only; the owner must have turned Cover on). Actions dry run unless --send --id:
   cover-weeks                weeks open to buy, terms, limits, preset ranges
@@ -81,7 +84,8 @@ function parseArgs(argv) {
     const a = argv[i];
     if (!a.startsWith("--")) pos.push(a);
     else if (a.includes("=")) flags[a.slice(2, a.indexOf("="))] = a.slice(a.indexOf("=") + 1);
-    else if (a === "--dry" || a === "--send" || a === "--partial") flags[a.slice(2)] = true;
+    else if (a === "--dry" || a === "--send" || a === "--partial" || a === "--above")
+      flags[a.slice(2)] = true;
     else flags[a.slice(2)] = argv[++i];
   }
   return { pos, flags };
@@ -174,13 +178,20 @@ function simulationView(sim) {
   };
 }
 
+// 2026-10-25: an order's dry run leads with the API's preview, as the same
+// lines the MCP tool prints (sdk.describePreview): triggers are on NAV, a price
+// return, and "sell when it makes 5%" was read as net profit.
 function planView(plan, side) {
   const a = plan.action;
-  if (a.kind === 2 || a.kind === 4)
+  if (a.kind >= 2)
     return {
+      ...(plan.preview
+        ? { previewText: sdk.describePreview(plan.preview), preview: plan.preview }
+        : {}),
       ticker: plan.ticker,
       side,
       ...(a.kind === 2 ? { amountUsdg: usd6(a.amount) } : {}),
+      ...(a.kind === 3 ? { shares: Number(a.amount) / 1e18, sharesWei: a.amount } : {}),
       terms: sdk.decodeAgentOrder(plan),
       slippageBps: a.slippageBps,
       remainingTodayUsdg: usd6(plan.status.remainingTodayUsdg),
@@ -319,7 +330,8 @@ function trade(side) {
   return (pos, flags) =>
     withAgent(async ({ sdk, fileSessionStore, viem, client, owner, agent }) => {
       const ticker = String(pos[1] ?? "").toUpperCase();
-      if (side !== "cancel" && !/^[A-Z0-9]{2,12}$/.test(ticker))
+      const cancelling = side === "cancel" || side === "cancel-exit";
+      if (!cancelling && !/^[A-Z0-9]{2,12}$/.test(ticker))
         throw new CliError(`${side} needs a basket ticker.`);
       const slippageBps = flags.slippage != null ? Number(flags.slippage) : undefined;
       let amountUsdg;
@@ -334,6 +346,14 @@ function trade(side) {
         throw new CliError(
           "limit needs --slippage BPS: at least the basket's limitMinSlippageBps (basket TICKER) and at most status's maxSlippageBps.",
         );
+      if (side === "exit") {
+        if (slippageBps == null)
+          throw new CliError(
+            "exit needs --slippage BPS: at least the basket's exitMinSlippageBps (basket TICKER) and at most status's maxSlippageBps.",
+          );
+        if (flags.stop == null && flags.tp == null)
+          throw new CliError("exit needs --stop NAV, --tp NAV or both (a bracket).");
+      }
       // 2026-10-11: dry run unless --send (owner: "replace the starter and the
       // skill with dry run logic"). Live used to be the default and --dry the
       // opt-in, so a model that dropped one flag spent real money.
@@ -355,20 +375,33 @@ function trade(side) {
           ticker,
           ...(slippageBps != null ? { slippageBps } : {}),
         };
-        if (side === "cancel")
+        if (cancelling)
           return client.buildAgentOrder({
-            kind: "cancel",
+            kind: side,
             owner,
             key: agent.address,
             orderId: pos[1],
           });
+        const expiryDays = flags.days !== undefined ? Number(flags.days) : undefined;
         if (side === "limit")
           return client.buildAgentOrder({
             ...args,
             kind: "limit",
             amountUsdg,
             triggerNav: Number(flags.nav),
-            expiryDays: flags.days !== undefined ? Number(flags.days) : undefined,
+            ...(flags.above === true ? { triggerBelow: false } : {}),
+            expiryDays,
+          });
+        if (side === "exit")
+          return client.buildAgentOrder({
+            ...args,
+            kind: "exit",
+            // "max": the API reads the account's balance on chain at build time
+            shares:
+              flags.shares === "max" ? "max" : await sellShares(client, s.account, ticker, flags),
+            ...(flags.stop != null ? { stopNav: Number(flags.stop) } : {}),
+            ...(flags.tp != null ? { tpNav: Number(flags.tp) } : {}),
+            expiryDays,
           });
         return side === "buy"
           ? client.buildAgentTrade({ ...args, side, amountUsdg })
@@ -406,11 +439,10 @@ function trade(side) {
       });
       const recordedKind = Number((await store.load())?.plan?.action?.kind);
       let orderId;
-      if (recordedKind === 2 && result.state === "confirmed") {
+      if ((recordedKind === 2 || recordedKind === 3) && result.state === "confirmed") {
         try {
-          orderId = sdk.limitOrderId(
-            (await chain.getTransactionReceipt({ hash: result.receipt.hash })).logs,
-          );
+          const { logs } = await chain.getTransactionReceipt({ hash: result.receipt.hash });
+          orderId = recordedKind === 2 ? sdk.limitOrderId(logs) : sdk.exitOrderId(logs);
         } catch {
           /* confirmation is still valid if the receipt lookup is temporarily unavailable */
         }
@@ -424,8 +456,16 @@ function trade(side) {
               note: "Limit placement confirmed. This is not confirmation of a fill; check orders and the transaction receipt.",
             }
           : {}),
+        ...(result.state === "confirmed" && recordedKind === 3
+          ? {
+              note: "Exit placement confirmed: the shares are escrowed. This is not confirmation of a sale; check orders and the transaction receipt. Cancel it with cancel-exit.",
+            }
+          : {}),
         ...(result.state === "confirmed" && recordedKind === 4
           ? { note: "Limit cancellation confirmed; escrow returned to the account." }
+          : {}),
+        ...(result.state === "confirmed" && recordedKind === 5
+          ? { note: "Exit cancellation confirmed; the shares returned to the account." }
           : {}),
       });
     });
@@ -633,7 +673,9 @@ const COMMANDS = {
   basket,
   positions,
   limit: trade("limit"),
+  exit: trade("exit"),
   cancel: trade("cancel"),
+  "cancel-exit": trade("cancel-exit"),
   orders: () =>
     withAgent(async ({ client, owner, agent }) => {
       const s = await client.agentSession({ owner, key: agent.address });
