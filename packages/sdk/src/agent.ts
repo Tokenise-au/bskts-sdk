@@ -162,7 +162,7 @@ export async function executeSession(
   );
   if (!parsed.success) throw new BsktsError("Invalid agent action plan.", "BAD_RESPONSE");
   plan = parsed.data;
-  if (plan.action.kind === 2 || plan.action.kind === 4) decodeAgentOrder(plan);
+  if (plan.action.kind >= 2) decodeAgentOrder(plan);
   const maxFee = options.maxNetworkFeeUsdg;
   // 2026-10-05: hosts can pass parsed plans directly, or mutate a client plan.
   // Recheck the reviewed vault binding before any signer callback runs.

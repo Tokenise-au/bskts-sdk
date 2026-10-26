@@ -252,8 +252,10 @@ export class BsktsClient {
     return plan;
   }
 
-  /** Unsigned delegated limit buy or cancellation. Existing orders are read
-   * with orders(session.account); only this account's LimitEscrow is cancellable. */
+  /** Unsigned delegated limit buy, exit (stop-loss / take-profit / bracket) or
+   * cancellation of either, with the API's `preview` of what its triggers mean.
+   * Existing orders are read with orders(session.account); only this account's
+   * LimitEscrow and SellEscrowV4 orders are cancellable. */
   async buildAgentOrder(
     p: { owner: Address; key: Address; feeUsdg?: bigint } & (
       | {
@@ -261,6 +263,8 @@ export class BsktsClient {
           ticker: string;
           amountUsdg: number;
           triggerNav: number;
+          /** default true: fill when NAV <= triggerNav; false: when NAV >= it (2026-10-25) */
+          triggerBelow?: boolean;
           expiryDays?: number;
           /** required (2026-10-24), 50-1000: at most the session's maxSlippageBps
            * and at least the basket's limitMinSlippageBps (markets() or basket()). The
@@ -268,21 +272,39 @@ export class BsktsClient {
            * yield-basket orders unable to fill, their USDG escrowed until expiry. */
           slippageBps: number;
         }
+      | {
+          /** 2026-10-25: sells `shares` when the 10-minute pool-average NAV is at or
+           * below stopNav or at or above tpNav (one or both; stop < tp). Triggers are
+           * on NAV: a price return, not net profit (see the plan's preview). */
+          kind: "exit";
+          ticker: string;
+          shares: SharesArg;
+          stopNav?: number;
+          tpNav?: number;
+          expiryDays?: number;
+          /** required, 50-1000: within the session's maxSlippageBps and at least the
+           * basket's exitMinSlippageBps (markets() or basket()) */
+          slippageBps: number;
+        }
       | { kind: "cancel"; orderId: Hex }
+      | { kind: "cancel-exit"; orderId: Hex }
     ),
   ) {
+    const navOk = (n: number | undefined) => n === undefined || (Number.isFinite(n) && n > 0);
+    const expiryOk = (d: number | undefined) =>
+      d === undefined || (Number.isInteger(d) && d >= 1 && d <= 90);
+    const slippageOk = (bps: number) => Number.isInteger(bps) && bps >= 50 && bps <= 1000;
     if (p.kind === "limit") {
       if (
         !Number.isFinite(p.amountUsdg) ||
         p.amountUsdg < 5 ||
         p.amountUsdg > Number.MAX_SAFE_INTEGER / 1e6 ||
-        !Number.isFinite(p.triggerNav) ||
-        p.triggerNav <= 0 ||
-        (p.expiryDays !== undefined &&
-          (!Number.isInteger(p.expiryDays) || p.expiryDays < 1 || p.expiryDays > 90))
+        p.triggerNav === undefined ||
+        !navOk(p.triggerNav) ||
+        !expiryOk(p.expiryDays)
       )
         throw new BsktsError("Invalid limit amount, trigger or expiry.", "BAD_REQUEST");
-      if (!Number.isInteger(p.slippageBps) || p.slippageBps < 50 || p.slippageBps > 1000)
+      if (!slippageOk(p.slippageBps))
         throw new BsktsError(
           "slippageBps is required for a limit: an integer from 50 to 1000.",
           "BAD_REQUEST",
@@ -293,6 +315,25 @@ export class BsktsClient {
           ticker: p.ticker,
           buyCostBps: (await this.basket(p.ticker)).buyCostBps,
         });
+    } else if (p.kind === "exit") {
+      if (
+        (p.shares !== "max" && (typeof p.shares !== "bigint" || p.shares <= 0n)) ||
+        !navOk(p.stopNav) ||
+        !navOk(p.tpNav) ||
+        (p.stopNav === undefined && p.tpNav === undefined) ||
+        (p.stopNav !== undefined && p.tpNav !== undefined && p.stopNav >= p.tpNav) ||
+        !expiryOk(p.expiryDays)
+      )
+        throw new BsktsError(
+          'Invalid exit: shares (bigint or "max"), stopNav and/or tpNav (stop < tp) and expiry.',
+          "BAD_REQUEST",
+        );
+      if (!slippageOk(p.slippageBps))
+        throw new BsktsError(
+          "slippageBps is required for an exit: an integer from 50 to 1000.",
+          "BAD_REQUEST",
+        );
+      checkPolicy(this.policy, { ticker: p.ticker, slippageBps: p.slippageBps });
     } else if (!/^0x[0-9a-fA-F]{64}$/.test(p.orderId))
       throw new BsktsError("Invalid orderId.", "BAD_REQUEST");
     const plan = await this.#request(s.agentOrderPlan, "/v1/agent/order", p);
@@ -304,24 +345,45 @@ export class BsktsClient {
       !same(plan.action.key, p.key) ||
       !same(plan.status.account, plan.action.account) ||
       plan.action.fee !== (p.feeUsdg ?? 0n) ||
-      terms.kind !== p.kind
+      terms.kind !== p.kind ||
+      plan.preview?.kind !== p.kind
     )
       throw new BsktsError("Agent order does not match the request.", "BAD_RESPONSE");
+    const e18 = (n: number) =>
+      parseUnits(n.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 18 }), 18);
+    const expiry = (days: number | undefined) =>
+      BigInt(Math.floor(Date.now() / 1000) + (days ?? 30) * 86400 + 60);
     if (p.kind === "limit" && terms.kind === "limit") {
       if (
         plan.ticker.toUpperCase() !== p.ticker.toUpperCase() ||
         plan.action.amount !== BigInt(Math.floor(p.amountUsdg * 1e6)) ||
-        terms.triggerNavE18 !==
-          parseUnits(
-            p.triggerNav.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 18 }),
-            18,
-          ) ||
+        terms.triggerNavE18 !== e18(p.triggerNav) ||
+        terms.triggerBelow !== (p.triggerBelow ?? true) ||
         plan.action.slippageBps !== p.slippageBps ||
-        terms.deadline > BigInt(Math.floor(Date.now() / 1000) + (p.expiryDays ?? 30) * 86400 + 60)
+        terms.deadline > expiry(p.expiryDays)
       )
         throw new BsktsError("Agent limit terms differ from the request.", "BAD_RESPONSE");
       checkPolicy(this.policy, { slippageBps: plan.action.slippageBps });
-    } else if (p.kind === "cancel" && terms.kind === "cancel" && !same(terms.orderId, p.orderId))
+    } else if (p.kind === "exit" && terms.kind === "exit") {
+      if (
+        plan.ticker.toUpperCase() !== p.ticker.toUpperCase() ||
+        (p.shares !== "max" && plan.action.amount !== p.shares) ||
+        terms.stopNavE18 !== (p.stopNav === undefined ? 0n : e18(p.stopNav)) ||
+        terms.tpNavE18 !== (p.tpNav === undefined ? 0n : e18(p.tpNav)) ||
+        plan.action.slippageBps !== p.slippageBps ||
+        terms.deadline > expiry(p.expiryDays)
+      )
+        throw new BsktsError("Agent exit terms differ from the request.", "BAD_RESPONSE");
+      // the sale's size in dollars, for the host's per-trade cap ("max" is only known now)
+      if (plan.preview?.kind === "exit")
+        checkPolicy(this.policy, {
+          usd: (Number(plan.action.amount) / 1e18) * plan.preview.navNow,
+        });
+    } else if (
+      (terms.kind === "cancel" || terms.kind === "cancel-exit") &&
+      "orderId" in p &&
+      !same(terms.orderId, p.orderId)
+    )
       throw new BsktsError("Cancellation targets a different order.", "BAD_RESPONSE");
     return plan;
   }

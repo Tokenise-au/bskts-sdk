@@ -4,7 +4,8 @@
 // Unsigned only: build tools return the transactions for the user's own wallet
 // to sign; nothing here holds a key or sends anything.
 //
-// Token budget: twelve tools (2026-10-21: + bskts_agent_order). The rules an agent must follow (units, approval
+// Token budget: twelve tools (2026-10-21: + bskts_agent_order; 2026-10-25: it
+// builds exits too, with a preview). The rules an agent must follow (units, approval
 // order, never send a failed dry run) live in the descriptions, so they arrive
 // with the tools instead of costing a docs read.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -15,6 +16,7 @@ import {
   agentTypedData,
   coverTypedData,
   decodeAgentOrder,
+  describePreview,
 } from "@bskts/sdk";
 import type { Address } from "viem";
 import { z } from "zod";
@@ -247,23 +249,35 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
     },
     (p) => run(() => client.agentSession(p)),
   );
+  // 2026-10-25: the preview leads, as text and numbers, so a model shows the
+  // user what the trigger means before anything is signed: triggers are on NAV
+  // (a price return), and "sell when it makes 5%" was read as net profit.
   const delegatedOrder = async (p: Parameters<BsktsClient["buildAgentOrder"]>[0]) => {
     const plan = await client.buildAgentOrder(p);
-    return { ...plan, terms: decodeAgentOrder(plan), typedData: agentTypedData(plan.action) };
+    return {
+      previewText: plan.preview ? describePreview(plan.preview) : [],
+      ...plan,
+      terms: decodeAgentOrder(plan),
+      typedData: agentTypedData(plan.action),
+    };
   };
   server.registerTool(
     "bskts_agent_order",
     {
-      title: "Build a delegated limit order or cancellation",
+      title: "Build a delegated limit or exit order, or a cancellation",
       description:
-        "UNSIGNED account Action for an approved agent key. Limit buys escrow USDG now and fill when 10-minute pool-average NAV <= triggerNav; slippageBps is required (>= basket limitMinSlippageBps from bskts_basket, <= session maxSlippageBps). Full amount counts toward today's turnover; expiry is capped to session expiry. Revocation does not cancel open orders: cancel them separately. Use bskts_account with the session account address to list orders. Host signs and relays using executeSessionOnce and a durable ID; preserve nonce after timeouts. No keys accepted or transactions sent by MCP.",
+        "UNSIGNED account Action for an approved agent key. SHOW previewText to the user before signing: triggers are on 10-minute pool-average NAV, so price returns, not net profit. limit: escrows USDG, fills at NAV <= triggerNav (>= if triggerBelow false). exit: escrows shares, sells at NAV <= stopNav or >= tpNav (stop < NAV < tp). slippageBps REQUIRED: <= session maxSlippageBps, >= the basket's limitMinSlippageBps / exitMinSlippageBps (bskts_basket). Placement counts toward today's turnover; expiry capped to the session. cancel (limit) / cancel-exit (exit) per the order's kind in bskts_account (session ACCOUNT address). Revocation does not cancel open orders. Host signs and relays with executeSessionOnce and a durable ID; preserve nonce after timeouts. MCP accepts no keys and sends nothing.",
       inputSchema: {
         owner: address,
         key: address,
-        kind: z.enum(["limit", "cancel"]),
+        kind: z.enum(["limit", "exit", "cancel", "cancel-exit"]),
         ticker: ticker.optional(),
         amountUsdg: z.number().min(5).optional(),
         triggerNav: z.number().positive().optional(),
+        triggerBelow: z.boolean().optional(),
+        shares: shares.optional(),
+        stopNav: z.number().positive().optional(),
+        tpNav: z.number().positive().optional(),
         expiryDays: z.number().int().min(1).max(90).optional(),
         // 2026-10-24: required for limit, as the API now requires it. Its old 50 bps
         // default sat below yield baskets' fill cost, so their orders never filled
@@ -276,7 +290,7 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
           .max(1000)
           .optional()
           .describe(
-            "limit: REQUIRED fill tolerance, bps; at most the session's maxSlippageBps and at least the basket's limitMinSlippageBps (bskts_basket; the app uses 300)",
+            "limit, exit: REQUIRED bps, within the session's maxSlippageBps, at least the basket's minimum (the app uses 300)",
           ),
         orderId: z
           .string()
@@ -287,21 +301,52 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
     },
     (p) =>
       run(() => {
-        if (p.kind === "cancel") {
+        const given = (keys: (keyof typeof p)[]) => keys.filter((k) => p[k] !== undefined);
+        if (p.kind === "cancel" || p.kind === "cancel-exit") {
           if (
             !p.orderId ||
-            p.ticker !== undefined ||
-            p.amountUsdg !== undefined ||
-            p.triggerNav !== undefined ||
-            p.expiryDays !== undefined ||
-            p.slippageBps !== undefined
+            given([
+              "ticker",
+              "amountUsdg",
+              "triggerNav",
+              "triggerBelow",
+              "shares",
+              "stopNav",
+              "tpNav",
+              "expiryDays",
+              "slippageBps",
+            ]).length
           )
             throw new BsktsError("Cancellation needs only owner, key and orderId.", "BAD_REQUEST");
           return delegatedOrder({
-            kind: "cancel",
+            kind: p.kind,
             owner: p.owner,
             key: p.key,
             orderId: p.orderId as `0x${string}`,
+          });
+        }
+        if (p.kind === "exit") {
+          if (
+            !p.ticker ||
+            p.shares === undefined ||
+            (p.stopNav === undefined && p.tpNav === undefined) ||
+            p.slippageBps === undefined ||
+            given(["amountUsdg", "triggerNav", "triggerBelow", "orderId"]).length
+          )
+            throw new BsktsError(
+              "Exit needs ticker, shares, stopNav and/or tpNav, and slippageBps; omit amountUsdg, triggerNav, triggerBelow and orderId.",
+              "BAD_REQUEST",
+            );
+          return delegatedOrder({
+            kind: "exit",
+            owner: p.owner,
+            key: p.key,
+            ticker: p.ticker,
+            shares: p.shares === "max" ? "max" : BigInt(p.shares),
+            stopNav: p.stopNav,
+            tpNav: p.tpNav,
+            expiryDays: p.expiryDays,
+            slippageBps: p.slippageBps,
           });
         }
         if (
@@ -309,10 +354,10 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
           p.amountUsdg === undefined ||
           p.triggerNav === undefined ||
           p.slippageBps === undefined ||
-          p.orderId !== undefined
+          given(["orderId", "shares", "stopNav", "tpNav"]).length
         )
           throw new BsktsError(
-            "Limit needs ticker, amountUsdg, triggerNav and slippageBps; omit orderId.",
+            "Limit needs ticker, amountUsdg, triggerNav and slippageBps; omit orderId, shares, stopNav and tpNav.",
             "BAD_REQUEST",
           );
         return delegatedOrder({
@@ -322,6 +367,7 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
           ticker: p.ticker,
           amountUsdg: p.amountUsdg,
           triggerNav: p.triggerNav,
+          triggerBelow: p.triggerBelow,
           expiryDays: p.expiryDays,
           slippageBps: p.slippageBps,
         });

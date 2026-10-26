@@ -27535,11 +27535,13 @@ var dist_exports = /* @__PURE__ */ __exportAll$1({
 	coverTypedData: () => coverTypedData,
 	decodeAgentOrder: () => decodeAgentOrder,
 	decodeCoverAction: () => decodeCoverAction,
+	describePreview: () => describePreview,
 	execute: () => execute,
 	executeCover: () => executeCover,
 	executeCoverOnce: () => executeCoverOnce,
 	executeSession: () => executeSession,
 	executeSessionOnce: () => executeSessionOnce,
+	exitOrderId: () => exitOrderId,
 	feeKey: () => feeKey,
 	feeMemory: () => feeMemory,
 	isBsktsError: () => isBsktsError,
@@ -27574,22 +27576,36 @@ var BsktsError = class extends Error {
 };
 const isBsktsError = (e) => e instanceof BsktsError;
 const limitTermsAbi = parseAbiParameters("(uint256 triggerNavE18,bool triggerBelow,uint64 deadline,uint16 maxSlippageBps,uint16 fillerFeeBps,uint16 startSlippageBps)");
+const exitTermsAbi = parseAbiParameters("(uint256 stopNavE18,uint256 tpNavE18,uint64 deadline,uint16 maxSlippageBps,uint16 fillerFeeBps,uint16 startSlippageBps)");
 function decodeAgentOrder(plan) {
-	const fail = () => new BsktsError("Invalid delegated limit-order terms.", "BAD_RESPONSE");
+	const fail = () => new BsktsError("Invalid delegated order terms.", "BAD_RESPONSE");
 	const a = plan.action;
+	/** The terms both escrows share, against the session that signs them. */
+	const badTerms = (t) => t.deadline > BigInt(plan.status.validUntil) || t.deadline < BigInt(a.deadline) || t.maxSlippageBps < 50 || t.maxSlippageBps > plan.status.maxSlippageBps || t.maxSlippageBps !== a.slippageBps || t.fillerFeeBps > 100 || t.startSlippageBps < 50 || t.startSlippageBps > t.maxSlippageBps;
 	try {
 		if (a.limit !== 0n) throw fail();
-		if (a.kind === 4) {
+		if (a.kind === 4 || a.kind === 5) {
 			const [orderId] = decodeAbiParameters([{ type: "bytes32" }], a.data);
 			if (a.amount !== 0n || a.slippageBps !== 0 || a.data.toLowerCase() !== encodeAbiParameters([{ type: "bytes32" }], [orderId]).toLowerCase()) throw fail();
-			return {
+			return a.kind === 4 ? {
 				kind: "cancel",
 				orderId
+			} : {
+				kind: "cancel-exit",
+				orderId
+			};
+		}
+		if (a.kind === 3) {
+			const [terms] = decodeAbiParameters(exitTermsAbi, a.data);
+			if (encodeAbiParameters(exitTermsAbi, [terms]).toLowerCase() !== a.data.toLowerCase() || a.amount === 0n || terms.stopNavE18 === 0n && terms.tpNavE18 === 0n || terms.stopNavE18 !== 0n && terms.tpNavE18 !== 0n && terms.stopNavE18 >= terms.tpNavE18 || badTerms(terms) || a.fee > plan.status.usdgWei) throw fail();
+			return {
+				kind: "exit",
+				...terms
 			};
 		}
 		if (a.kind !== 2 || a.amount < 5000000n) throw fail();
 		const [terms] = decodeAbiParameters(limitTermsAbi, a.data);
-		if (encodeAbiParameters(limitTermsAbi, [terms]).toLowerCase() !== a.data.toLowerCase() || !terms.triggerBelow || terms.triggerNavE18 <= 0n || terms.deadline > BigInt(plan.status.validUntil) || terms.deadline < BigInt(a.deadline) || terms.maxSlippageBps < 50 || terms.maxSlippageBps > plan.status.maxSlippageBps || terms.maxSlippageBps !== a.slippageBps || terms.fillerFeeBps > 100 || terms.startSlippageBps < 50 || terms.startSlippageBps > terms.maxSlippageBps || a.amount > plan.status.remainingTodayUsdg || a.amount + a.fee > plan.status.usdgWei) throw fail();
+		if (encodeAbiParameters(limitTermsAbi, [terms]).toLowerCase() !== a.data.toLowerCase() || terms.triggerNavE18 <= 0n || badTerms(terms) || a.amount > plan.status.remainingTodayUsdg || a.amount + a.fee > plan.status.usdgWei) throw fail();
 		return {
 			kind: "limit",
 			...terms
@@ -27598,19 +27614,52 @@ function decodeAgentOrder(plan) {
 		throw fail();
 	}
 }
+const LIMIT_ESCROW = "0x5e267dBD5d0540be1b6EADe920F288fF50EB76Db";
+/** SellEscrowV4: the escrow BsktsSessionModule places and cancels exits on. */
+const SELL_ESCROW = "0x7e0B140162ed713398842e25e18c7371230669e0";
 const createdAbi = parseAbi(["event OrderCreated(bytes32 indexed id,address indexed recipient,address vault,uint256 amount,uint256 triggerNavE18,bool triggerBelow,uint64 deadline,uint16 maxSlippageBps,uint16 fillerFeeBps)"]);
-/** Read the order ID from a placement receipt, without relying on indexer lag. */
-function limitOrderId(logs) {
+const exitCreatedAbi = parseAbi(["event SellIntentCreated(bytes32 indexed id,address indexed recipient,address vault,uint256 shares,uint256 stopNavE18,uint256 tpNavE18,uint64 deadline,uint16 maxSlippageBps,uint16 fillerFeeBps)"]);
+function idFrom(logs, escrow, abi) {
 	for (const log of logs) {
-		if (log.address.toLowerCase() !== "0x5e267dBD5d0540be1b6EADe920F288fF50EB76Db".toLowerCase()) continue;
+		if (log.address.toLowerCase() !== escrow.toLowerCase()) continue;
 		try {
 			return decodeEventLog({
-				abi: createdAbi,
+				abi,
 				data: log.data,
 				topics: [...log.topics]
 			}).args.id;
 		} catch {}
 	}
+}
+/** Read the order ID from a placement receipt, without relying on indexer lag. */
+const limitOrderId = (logs) => idFrom(logs, LIMIT_ESCROW, createdAbi);
+/** An exit's ID from its placement receipt. Limit and exit IDs are each
+* escrow's own counter and can be equal: cancel with the matching kind. */
+const exitOrderId = (logs) => idFrom(logs, SELL_ESCROW, exitCreatedAbi);
+const signed = (n) => `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
+const nav = (n) => `NAV ${Number(n.toPrecision(8))}`;
+/** 2026-10-25: the plan's preview as plain lines, so the MCP tool and the skill
+* print the same words around the API's numbers. Triggers are on NAV: each line
+* is a price move, with what reaches the account after costs beside it. */
+function describePreview(p) {
+	const now = p.navNow === null ? "NAV now unavailable" : `${nav(p.navNow)} now (10-minute pool average)`;
+	if (p.kind === "limit") return [
+		`Limit buy when ${p.direction === "below" ? "NAV <=" : "NAV >="} ${Number(p.triggerNav.toPrecision(8))}: ${signed(p.fromNowPct)} from ${now}.`,
+		`Worst price per share at the trigger: ${Number(p.worstPricePerShare.toPrecision(8))} (${signed(p.worstFromNowPct)} from now; max slippage ${p.costs.maxSlippageBps} bps incl. the ${p.costs.mintFeeBps} bps mint fee, filler fee ${p.costs.fillerFeeBps} bps).`,
+		...p.direction === "above" ? ["A buy-above fills at or over its trigger, so it can pay more than this."] : [],
+		...p.fillsNow ? ["The trigger is already met: it can fill as soon as it is placed."] : [],
+		p.basis
+	];
+	if (p.kind === "exit") return [
+		`Exit ${Number(p.shares.toPrecision(8))} shares; ${now}${p.avgEntry === null ? "; no entry history" : `; average entry ${nav(p.avgEntry)}`}.`,
+		...p.triggers.map((t) => `${t.edge === "stop" ? "Stop-loss" : "Take-profit"} at ${nav(t.nav)}: ${signed(t.fromNowPct)} from now` + (t.priceReturnPct === null ? `; worst proceeds ${t.worstProceedsUsdg} USDG.` : `; vs entry ${signed(t.priceReturnPct)} price, ${t.estNetReturnPct === null ? "n/a" : signed(t.estNetReturnPct)} est. net, ${t.worstNetReturnPct === null ? "n/a" : signed(t.worstNetReturnPct)} worst net (worst proceeds ${t.worstProceedsUsdg} USDG).`)),
+		...p.breakEvenNav === null ? [] : [`Break-even after estimated costs: ${nav(p.breakEvenNav)}.`],
+		...p.triggers.some((t) => t.edge === "stop") ? ["A stop in a fast fall can fill below its trigger: the floor is priced when it fills."] : [],
+		p.basis
+	];
+	if (p.kind === "cancel") return [`Cancel a limit buy at NAV ${p.direction === "below" ? "<=" : ">="} ${Number(p.triggerNav.toPrecision(8))}${p.fromNowPct === null ? "" : ` (${signed(p.fromNowPct)} from now)`}; ${p.refundUsdg} USDG returns to the account.`];
+	const edge = (name, e) => e === null ? [] : [`${name} ${nav(e.nav)}${e.fromNowPct === null ? "" : ` (${signed(e.fromNowPct)} from now)`}`];
+	return [`Cancel an exit (${[...edge("stop", p.stop), ...edge("take-profit", p.takeProfit)].join(", ")}); ${Number(p.returnsShares.toPrecision(8))} shares return to the account.`];
 }
 /** A Sender over viem clients. The wallet client must carry its account and
 * chain (`createWalletClient({ account, chain: robinhood, transport })`); in a
@@ -27710,6 +27759,7 @@ var schemas_exports = /* @__PURE__ */ __exportAll({
 	agentCoverPlan: () => agentCoverPlan,
 	agentExecutionPlan: () => agentExecutionPlan,
 	agentOrderPlan: () => agentOrderPlan,
+	agentOrderPreview: () => agentOrderPreview,
 	agentSession: () => agentSession,
 	agentTradePlan: () => agentTradePlan,
 	apiErrorBody: () => apiErrorBody,
@@ -27780,6 +27830,9 @@ const basketSummary = object({
 	* a yield basket's CLM reserve, plus the mint fee, never under 50. Optional until
 	* every API deployment returns it (2026-10-24). */
 	limitMinSlippageBps: num.optional(),
+	/** the same for a delegated exit (stop-loss / take-profit): the sale's cost
+	* plus the 0.20% sell fee, never under 50 (2026-10-25). Optional likewise. */
+	exitMinSlippageBps: num.optional(),
 	group: string(),
 	/** plain-language warning for higher-risk baskets */
 	risk: string().nullable()
@@ -27802,7 +27855,9 @@ const market = object({
 	change24h: numOrNull,
 	buyCostBps: numOrNull,
 	/** see basketSummary.limitMinSlippageBps */
-	limitMinSlippageBps: num.optional()
+	limitMinSlippageBps: num.optional(),
+	/** see basketSummary.exitMinSlippageBps */
+	exitMinSlippageBps: num.optional()
 });
 const marketsResponse = object({
 	markets: array(market.partial()),
@@ -28064,7 +28119,9 @@ const sessionAction = object({
 		literal(0),
 		literal(1),
 		literal(2),
-		literal(4)
+		literal(3),
+		literal(4),
+		literal(5)
 	]),
 	vault: address,
 	amount: uint256,
@@ -28075,18 +28132,95 @@ const sessionAction = object({
 	deadline: number().int().positive().max(2 ** 48 - 1),
 	fee: uint256.refine((n) => n <= 10000000n)
 });
+const pct = numOrNull;
+const exitEdge = object({
+	edge: _enum(["stop", "takeProfit"]),
+	nav: num,
+	/** % from navNow (the 10-minute pool-average NAV the trigger compares with) */
+	fromNowPct: num,
+	/** % from the account's average entry NAV, before costs */
+	priceReturnPct: pct,
+	/** less the basket's cost mark, the 0.20% sell fee and the filler fee */
+	estNetReturnPct: pct,
+	/** less maxSlippageBps (which includes the sell fee) and the filler fee, at the trigger */
+	worstNetReturnPct: pct,
+	estProceedsUsdg: numOrNull,
+	worstProceedsUsdg: num
+});
+const cancelEdge = object({
+	nav: num,
+	fromNowPct: numOrNull
+}).nullable();
+const agentOrderPreview = discriminatedUnion("kind", [
+	object({
+		kind: literal("limit"),
+		basis: string(),
+		navNow: num,
+		triggerNav: num,
+		direction: _enum(["below", "above"]),
+		fromNowPct: num,
+		/** the trigger is already met: it can fill as soon as it is placed */
+		fillsNow: boolean(),
+		/** the most per share at the trigger: max slippage (mint fee included) and filler fee */
+		worstPricePerShare: num,
+		worstFromNowPct: num,
+		worstShares: num,
+		costs: object({
+			mintFeeBps: num,
+			fillerFeeBps: num,
+			maxSlippageBps: num
+		}),
+		notes: array(string())
+	}),
+	object({
+		kind: literal("exit"),
+		basis: string(),
+		navNow: num,
+		shares: num,
+		/** average NAV per share paid (GET /v1/positions), buy costs not included */
+		avgEntry: numOrNull,
+		breakEvenNav: numOrNull,
+		triggers: array(exitEdge),
+		costs: object({
+			sellFeeBps: num,
+			routeCostBps: numOrNull,
+			fillerFeeBps: num,
+			maxSlippageBps: num
+		}),
+		notes: array(string())
+	}),
+	object({
+		kind: literal("cancel"),
+		basis: string(),
+		navNow: numOrNull,
+		triggerNav: num,
+		direction: _enum(["below", "above"]),
+		fromNowPct: numOrNull,
+		refundUsdg: num
+	}),
+	object({
+		kind: literal("cancel-exit"),
+		basis: string(),
+		navNow: numOrNull,
+		stop: cancelEdge,
+		takeProfit: cancelEdge,
+		returnsShares: num,
+		returnsSharesWei: wei
+	})
+]);
 const agentPlanBase = object({
 	ticker: string(),
 	status: agentSession,
 	action: sessionAction,
 	relayerUrl: literal("https://bskts.xyz/relay/v1/account/execute"),
-	simulation
+	simulation,
+	preview: agentOrderPreview.optional()
 }).refine((plan) => isAgentVault(plan.ticker, plan.action.vault), {
 	message: "Action vault does not match the reviewed basket address; upgrade for new baskets.",
 	path: ["action", "vault"]
 });
 const agentTradePlan = agentPlanBase.refine((p) => (p.action.kind === 0 || p.action.kind === 1) && p.action.amount > 0n, "Expected a market trade");
-const agentOrderPlan = agentPlanBase.refine((p) => p.action.kind === 2 || p.action.kind === 4, "Expected a limit order or cancellation");
+const agentOrderPlan = agentPlanBase.refine((p) => p.action.kind >= 2, "Expected a limit or exit order, or a cancellation");
 const agentExecutionPlan = union([agentTradePlan, agentOrderPlan]);
 const sessionReceipt = object({
 	hash: hex.refine((h) => /^0x[0-9a-fA-F]{64}$/.test(h)),
@@ -28402,7 +28536,7 @@ async function executeSession(plan, sender, options) {
 	const parsed = agentExecutionPlan.safeParse(JSON.parse(JSON.stringify(plan, (_, v) => typeof v === "bigint" ? v.toString() : v)));
 	if (!parsed.success) throw new BsktsError("Invalid agent action plan.", "BAD_RESPONSE");
 	plan = parsed.data;
-	if (plan.action.kind === 2 || plan.action.kind === 4) decodeAgentOrder(plan);
+	if (plan.action.kind >= 2) decodeAgentOrder(plan);
 	const maxFee = options.maxNetworkFeeUsdg;
 	if (!isAgentVault(plan.ticker, plan.action.vault)) throw new BsktsError("Action vault does not match the reviewed basket address.", "BAD_RESPONSE");
 	const fees = options.fees === false ? void 0 : options.fees ?? processFees$1;
@@ -28949,12 +29083,17 @@ var BsktsClient = class {
 		}
 		return plan;
 	}
-	/** Unsigned delegated limit buy or cancellation. Existing orders are read
-	* with orders(session.account); only this account's LimitEscrow is cancellable. */
+	/** Unsigned delegated limit buy, exit (stop-loss / take-profit / bracket) or
+	* cancellation of either, with the API's `preview` of what its triggers mean.
+	* Existing orders are read with orders(session.account); only this account's
+	* LimitEscrow and SellEscrowV4 orders are cancellable. */
 	async buildAgentOrder(p) {
+		const navOk = (n) => n === void 0 || Number.isFinite(n) && n > 0;
+		const expiryOk = (d) => d === void 0 || Number.isInteger(d) && d >= 1 && d <= 90;
+		const slippageOk = (bps) => Number.isInteger(bps) && bps >= 50 && bps <= 1e3;
 		if (p.kind === "limit") {
-			if (!Number.isFinite(p.amountUsdg) || p.amountUsdg < 5 || p.amountUsdg > Number.MAX_SAFE_INTEGER / 1e6 || !Number.isFinite(p.triggerNav) || p.triggerNav <= 0 || p.expiryDays !== void 0 && (!Number.isInteger(p.expiryDays) || p.expiryDays < 1 || p.expiryDays > 90)) throw new BsktsError("Invalid limit amount, trigger or expiry.", "BAD_REQUEST");
-			if (!Number.isInteger(p.slippageBps) || p.slippageBps < 50 || p.slippageBps > 1e3) throw new BsktsError("slippageBps is required for a limit: an integer from 50 to 1000.", "BAD_REQUEST");
+			if (!Number.isFinite(p.amountUsdg) || p.amountUsdg < 5 || p.amountUsdg > Number.MAX_SAFE_INTEGER / 1e6 || p.triggerNav === void 0 || !navOk(p.triggerNav) || !expiryOk(p.expiryDays)) throw new BsktsError("Invalid limit amount, trigger or expiry.", "BAD_REQUEST");
+			if (!slippageOk(p.slippageBps)) throw new BsktsError("slippageBps is required for a limit: an integer from 50 to 1000.", "BAD_REQUEST");
 			checkPolicy(this.policy, {
 				ticker: p.ticker,
 				usd: p.amountUsdg,
@@ -28964,18 +29103,30 @@ var BsktsClient = class {
 				ticker: p.ticker,
 				buyCostBps: (await this.basket(p.ticker)).buyCostBps
 			});
+		} else if (p.kind === "exit") {
+			if (p.shares !== "max" && (typeof p.shares !== "bigint" || p.shares <= 0n) || !navOk(p.stopNav) || !navOk(p.tpNav) || p.stopNav === void 0 && p.tpNav === void 0 || p.stopNav !== void 0 && p.tpNav !== void 0 && p.stopNav >= p.tpNav || !expiryOk(p.expiryDays)) throw new BsktsError("Invalid exit: shares (bigint or \"max\"), stopNav and/or tpNav (stop < tp) and expiry.", "BAD_REQUEST");
+			if (!slippageOk(p.slippageBps)) throw new BsktsError("slippageBps is required for an exit: an integer from 50 to 1000.", "BAD_REQUEST");
+			checkPolicy(this.policy, {
+				ticker: p.ticker,
+				slippageBps: p.slippageBps
+			});
 		} else if (!/^0x[0-9a-fA-F]{64}$/.test(p.orderId)) throw new BsktsError("Invalid orderId.", "BAD_REQUEST");
 		const plan = await this.#request(agentOrderPlan, "/v1/agent/order", p);
 		const same = (a, b) => a.toLowerCase() === b.toLowerCase();
 		const terms = decodeAgentOrder(plan);
-		if (!same(plan.status.owner, p.owner) || !same(plan.status.key, p.key) || !same(plan.action.key, p.key) || !same(plan.status.account, plan.action.account) || plan.action.fee !== (p.feeUsdg ?? 0n) || terms.kind !== p.kind) throw new BsktsError("Agent order does not match the request.", "BAD_RESPONSE");
+		if (!same(plan.status.owner, p.owner) || !same(plan.status.key, p.key) || !same(plan.action.key, p.key) || !same(plan.status.account, plan.action.account) || plan.action.fee !== (p.feeUsdg ?? 0n) || terms.kind !== p.kind || plan.preview?.kind !== p.kind) throw new BsktsError("Agent order does not match the request.", "BAD_RESPONSE");
+		const e18 = (n) => parseUnits(n.toLocaleString("en-US", {
+			useGrouping: false,
+			maximumFractionDigits: 18
+		}), 18);
+		const expiry = (days) => BigInt(Math.floor(Date.now() / 1e3) + (days ?? 30) * 86400 + 60);
 		if (p.kind === "limit" && terms.kind === "limit") {
-			if (plan.ticker.toUpperCase() !== p.ticker.toUpperCase() || plan.action.amount !== BigInt(Math.floor(p.amountUsdg * 1e6)) || terms.triggerNavE18 !== parseUnits(p.triggerNav.toLocaleString("en-US", {
-				useGrouping: false,
-				maximumFractionDigits: 18
-			}), 18) || plan.action.slippageBps !== p.slippageBps || terms.deadline > BigInt(Math.floor(Date.now() / 1e3) + (p.expiryDays ?? 30) * 86400 + 60)) throw new BsktsError("Agent limit terms differ from the request.", "BAD_RESPONSE");
+			if (plan.ticker.toUpperCase() !== p.ticker.toUpperCase() || plan.action.amount !== BigInt(Math.floor(p.amountUsdg * 1e6)) || terms.triggerNavE18 !== e18(p.triggerNav) || terms.triggerBelow !== (p.triggerBelow ?? true) || plan.action.slippageBps !== p.slippageBps || terms.deadline > expiry(p.expiryDays)) throw new BsktsError("Agent limit terms differ from the request.", "BAD_RESPONSE");
 			checkPolicy(this.policy, { slippageBps: plan.action.slippageBps });
-		} else if (p.kind === "cancel" && terms.kind === "cancel" && !same(terms.orderId, p.orderId)) throw new BsktsError("Cancellation targets a different order.", "BAD_RESPONSE");
+		} else if (p.kind === "exit" && terms.kind === "exit") {
+			if (plan.ticker.toUpperCase() !== p.ticker.toUpperCase() || p.shares !== "max" && plan.action.amount !== p.shares || terms.stopNavE18 !== (p.stopNav === void 0 ? 0n : e18(p.stopNav)) || terms.tpNavE18 !== (p.tpNav === void 0 ? 0n : e18(p.tpNav)) || plan.action.slippageBps !== p.slippageBps || terms.deadline > expiry(p.expiryDays)) throw new BsktsError("Agent exit terms differ from the request.", "BAD_RESPONSE");
+			if (plan.preview?.kind === "exit") checkPolicy(this.policy, { usd: Number(plan.action.amount) / 0xde0b6b3a7640000 * plan.preview.navNow });
+		} else if ((terms.kind === "cancel" || terms.kind === "cancel-exit") && "orderId" in p && !same(terms.orderId, p.orderId)) throw new BsktsError("Cancellation targets a different order.", "BAD_RESPONSE");
 		return plan;
 	}
 	/** The weeks a session may buy cover for (the one trading now and the next
@@ -29354,7 +29505,7 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.1.2";
+const SKILL_VERSION = "1.2.0";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
@@ -29365,9 +29516,12 @@ const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   buy TICKER USD [--slippage BPS]                          dry run: builds and simulates, sends nothing
   sell TICKER (--shares WEI|max | --fraction 0.5) [...]     dry run
   buy|sell ... --send --id ID                               the live trade, once per ID
-  limit TICKER USD --nav NAV --slippage BPS [--days N]    dry run; --send --id to place
+  limit TICKER USD --nav NAV --slippage BPS [--above] [--days N]   dry run + preview; --send --id to place
+  exit TICKER (--shares WEI|max | --fraction 0.5) [--stop NAV] [--tp NAV] --slippage BPS [--days N]
+                             stop-loss / take-profit / bracket: dry run + preview; --send --id to place
   orders                     open account limit and exit orders
-  cancel ORDER_ID            dry run; --send --id to cancel a limit
+  cancel ORDER_ID            dry run; --send --id to cancel a limit (kind limit_buy)
+  cancel-exit ORDER_ID       dry run; --send --id to cancel an exit (stop_loss / take_profit / bracket)
   trade-status --id ID       outcome of a journalled trade or cover action, never sends anything
 Weekend Cover (buying only; the owner must have turned Cover on). Actions dry run unless --send --id:
   cover-weeks                weeks open to buy, terms, limits, preset ranges
@@ -29394,7 +29548,7 @@ function parseArgs(argv) {
 		const a = argv[i];
 		if (!a.startsWith("--")) pos.push(a);
 		else if (a.includes("=")) flags[a.slice(2, a.indexOf("="))] = a.slice(a.indexOf("=") + 1);
-		else if (a === "--dry" || a === "--send" || a === "--partial") flags[a.slice(2)] = true;
+		else if (a === "--dry" || a === "--send" || a === "--partial" || a === "--above") flags[a.slice(2)] = true;
 		else flags[a.slice(2)] = argv[++i];
 	}
 	return {
@@ -29477,10 +29631,18 @@ function simulationView(sim) {
 }
 function planView(plan, side) {
 	const a = plan.action;
-	if (a.kind === 2 || a.kind === 4) return {
+	if (a.kind >= 2) return {
+		...plan.preview ? {
+			previewText: describePreview(plan.preview),
+			preview: plan.preview
+		} : {},
 		ticker: plan.ticker,
 		side,
 		...a.kind === 2 ? { amountUsdg: usd6(a.amount) } : {},
+		...a.kind === 3 ? {
+			shares: Number(a.amount) / 0xde0b6b3a7640000,
+			sharesWei: a.amount
+		} : {},
 		terms: decodeAgentOrder(plan),
 		slippageBps: a.slippageBps,
 		remainingTodayUsdg: usd6(plan.status.remainingTodayUsdg),
@@ -29615,7 +29777,8 @@ async function heldShares(client, account, ticker) {
 function trade(side) {
 	return (pos, flags) => withAgent(async ({ sdk, fileSessionStore, viem, client, owner, agent }) => {
 		const ticker = String(pos[1] ?? "").toUpperCase();
-		if (side !== "cancel" && !/^[A-Z0-9]{2,12}$/.test(ticker)) throw new CliError(`${side} needs a basket ticker.`);
+		const cancelling = side === "cancel" || side === "cancel-exit";
+		if (!cancelling && !/^[A-Z0-9]{2,12}$/.test(ticker)) throw new CliError(`${side} needs a basket ticker.`);
 		const slippageBps = flags.slippage != null ? Number(flags.slippage) : void 0;
 		let amountUsdg;
 		if (side === "buy" || side === "limit") {
@@ -29623,6 +29786,10 @@ function trade(side) {
 			if (!(amountUsdg > 0)) throw new CliError("buy TICKER USD: USD is a dollar amount, e.g. 10.");
 		}
 		if (side === "limit" && slippageBps == null) throw new CliError("limit needs --slippage BPS: at least the basket's limitMinSlippageBps (basket TICKER) and at most status's maxSlippageBps.");
+		if (side === "exit") {
+			if (slippageBps == null) throw new CliError("exit needs --slippage BPS: at least the basket's exitMinSlippageBps (basket TICKER) and at most status's maxSlippageBps.");
+			if (flags.stop == null && flags.tp == null) throw new CliError("exit needs --stop NAV, --tp NAV or both (a bracket).");
+		}
 		if (flags.send && flags.dry) throw new CliError("Use --send or --dry, not both.");
 		const live = flags.send === true;
 		const id = live ? tradeId(flags.id) : null;
@@ -29639,18 +29806,28 @@ function trade(side) {
 				ticker,
 				...slippageBps != null ? { slippageBps } : {}
 			};
-			if (side === "cancel") return client.buildAgentOrder({
-				kind: "cancel",
+			if (cancelling) return client.buildAgentOrder({
+				kind: side,
 				owner,
 				key: agent.address,
 				orderId: pos[1]
 			});
+			const expiryDays = flags.days !== void 0 ? Number(flags.days) : void 0;
 			if (side === "limit") return client.buildAgentOrder({
 				...args,
 				kind: "limit",
 				amountUsdg,
 				triggerNav: Number(flags.nav),
-				expiryDays: flags.days !== void 0 ? Number(flags.days) : void 0
+				...flags.above === true ? { triggerBelow: false } : {},
+				expiryDays
+			});
+			if (side === "exit") return client.buildAgentOrder({
+				...args,
+				kind: "exit",
+				shares: flags.shares === "max" ? "max" : await sellShares(client, s.account, ticker, flags),
+				...flags.stop != null ? { stopNav: Number(flags.stop) } : {},
+				...flags.tp != null ? { tpNav: Number(flags.tp) } : {},
+				expiryDays
 			});
 			return side === "buy" ? client.buildAgentTrade({
 				...args,
@@ -29690,15 +29867,18 @@ function trade(side) {
 		});
 		const recordedKind = Number((await store.load())?.plan?.action?.kind);
 		let orderId;
-		if (recordedKind === 2 && result.state === "confirmed") try {
-			orderId = sdk.limitOrderId((await chain.getTransactionReceipt({ hash: result.receipt.hash })).logs);
+		if ((recordedKind === 2 || recordedKind === 3) && result.state === "confirmed") try {
+			const { logs } = await chain.getTransactionReceipt({ hash: result.receipt.hash });
+			orderId = recordedKind === 2 ? sdk.limitOrderId(logs) : sdk.exitOrderId(logs);
 		} catch {}
 		const view = outcomeView(id, result, existing !== void 0);
 		out({
 			...view,
 			...orderId ? { orderId } : {},
 			...result.state === "confirmed" && recordedKind === 2 ? { note: "Limit placement confirmed. This is not confirmation of a fill; check orders and the transaction receipt." } : {},
-			...result.state === "confirmed" && recordedKind === 4 ? { note: "Limit cancellation confirmed; escrow returned to the account." } : {}
+			...result.state === "confirmed" && recordedKind === 3 ? { note: "Exit placement confirmed: the shares are escrowed. This is not confirmation of a sale; check orders and the transaction receipt. Cancel it with cancel-exit." } : {},
+			...result.state === "confirmed" && recordedKind === 4 ? { note: "Limit cancellation confirmed; escrow returned to the account." } : {},
+			...result.state === "confirmed" && recordedKind === 5 ? { note: "Exit cancellation confirmed; the shares returned to the account." } : {}
 		});
 	});
 }
@@ -29886,7 +30066,9 @@ const COMMANDS = {
 	basket,
 	positions,
 	limit: trade("limit"),
+	exit: trade("exit"),
 	cancel: trade("cancel"),
+	"cancel-exit": trade("cancel-exit"),
 	orders: () => withAgent(async ({ client, owner, agent }) => {
 		const s = await client.agentSession({
 			owner,
