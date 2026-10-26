@@ -1,0 +1,339 @@
+{
+  "indexes": [
+    {
+      "ticker": "DIGI64",
+      "name": "Digital 60/40",
+      "thesis": "The balanced portfolio, rebuilt — broad equity beta plus digital assets.",
+      "vault": "0x63e5dFBEC475b3afA031be9031e73aCdb6F1d559",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 65,
+      "targetWeights": {
+        "SPY": 0.6,
+        "ETH": 0.4
+      },
+      "nav": 99.27764,
+      "change24h": -0.0035752081,
+      "buyCostBps": 3.4231288,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "MAG6",
+      "name": "Mega-cap Tech",
+      "thesis": "The anchor. Six mega-caps, equally weighted.",
+      "vault": "0x6A19EcdA657209659c019eb629A2d4718a1af6d9",
+      "rebalance": "quarterly",
+      "mgmtFeeBps": 75,
+      "targetWeights": {
+        "NVDA": 0.166667,
+        "AAPL": 0.166667,
+        "MSFT": 0.166667,
+        "GOOGL": 0.166667,
+        "META": 0.166667,
+        "TSLA": 0.166667
+      },
+      "nav": 104.61935,
+      "change24h": -0.0011963149,
+      "buyCostBps": 17.622029,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "INDEX2",
+      "name": "Broad Beta",
+      "thesis": "The whole US market in one click.",
+      "vault": "0xC02b7A59846B77d0b1d0cfE8943D32c279ED292a",
+      "rebalance": "quarterly",
+      "mgmtFeeBps": 50,
+      "targetWeights": {
+        "SPY": 0.5,
+        "QQQ": 0.5
+      },
+      "nav": 99.402203,
+      "change24h": -0.00016107191,
+      "buyCostBps": 5.2387873,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "FRONTIER",
+      "name": "Moonshot Growth",
+      "thesis": "SpaceX, Tesla, NVIDIA — three of the market's biggest growth stories, equal-weighted in one position.",
+      "vault": "0x9c0DD188E9Bf1cB0F9495a76482e73745F704ac5",
+      "rebalance": "quarterly",
+      "mgmtFeeBps": 95,
+      "targetWeights": {
+        "SPCX": 0.333333,
+        "TSLA": 0.333333,
+        "NVDA": 0.333333
+      },
+      "nav": 103.61375,
+      "change24h": -0.0011861196,
+      "buyCostBps": 13.456307,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "CRYPTOEQ",
+      "name": "Crypto Complex",
+      "thesis": "Crypto from both sides — the equities and the asset itself.",
+      "vault": "0x4Ef22a6B9c14255f21B06463c28742166dC4308E",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 95,
+      "targetWeights": {
+        "COIN": 0.25,
+        "MSTR": 0.25,
+        "CRCL": 0.25,
+        "ETH": 0.25
+      },
+      "nav": 98.351582,
+      "change24h": -0.0028709647,
+      "buyCostBps": 21.857189,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "OPUS",
+      "name": "AI Core",
+      "thesis": "The frontier: the accelerators that train the largest models, and the two companies shipping their own frontier systems at scale. Conviction-weighted by compute intensity, not equally weighted like a mega-cap index.",
+      "vault": "0x8E67148C7682C2f0485F6C3012EAf877D6b54A93",
+      "rebalance": "quarterly",
+      "mgmtFeeBps": 85,
+      "targetWeights": {
+        "NVDA": 0.5,
+        "MSFT": 0.3,
+        "GOOGL": 0.2
+      },
+      "nav": 97.98563,
+      "change24h": 0.0018390986,
+      "buyCostBps": 12.696732,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "FABLE",
+      "name": "AI Capex",
+      "thesis": "AI capex — the physical build-out beneath the models: memory, fabs, logic and storage. Deliberately holds no NVDA; this is the tier that supplies it.",
+      "vault": "0xE5548Cb2A94F65B3B9953E582B4F8fD47d15A439",
+      "rebalance": "quarterly",
+      "mgmtFeeBps": 75,
+      "targetWeights": {
+        "MU": 0.3,
+        "TSM": 0.25,
+        "AMD": 0.2,
+        "INTC": 0.15,
+        "SNDK": 0.1
+      },
+      "nav": 99.149917,
+      "change24h": -0.00032179509,
+      "buyCostBps": 73.463977,
+      "limitMinSlippageBps": 94,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "ORBIT",
+      "name": "BTC, Space & Nasdaq",
+      "thesis": "One of each: bitcoin, SpaceX, and the Nasdaq-100 — three asset classes that normally take three different accounts.",
+      "vault": "0x20D6C400DBCF0cCcC08C408c244A3D4fd85275C4",
+      "rebalance": "quarterly",
+      "mgmtFeeBps": 95,
+      "targetWeights": {
+        "cbBTC": 0.3334,
+        "SPCX": 0.3333,
+        "QQQ": 0.3333
+      },
+      "nav": 101.98726,
+      "change24h": -0.0023753217,
+      "buyCostBps": 13.811465,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "MAXBETA",
+      "name": "High-Volatility Four",
+      "thesis": "The four names on the chain that move most, held flat — no conviction tilt, just the highest-beta exposure the chain offers in one position.",
+      "vault": "0x25c5aD70B522dB7dcE405801230508868C15452A",
+      "rebalance": "quarterly",
+      "mgmtFeeBps": 85,
+      "targetWeights": {
+        "TSLA": 0.25,
+        "MSTR": 0.25,
+        "COIN": 0.25,
+        "SPCX": 0.25
+      },
+      "nav": 100.08084,
+      "change24h": -0.0030536502,
+      "buyCostBps": 22.897619,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "SILICON",
+      "name": "Chipmaker Trio",
+      "thesis": "Leading-edge compute end to end — the two designers drawing the fastest chips, and the foundry that actually makes them.",
+      "vault": "0x421caF01904d2113379c7AC82975d067993b0a95",
+      "rebalance": "quarterly",
+      "mgmtFeeBps": 75,
+      "targetWeights": {
+        "NVDA": 0.3334,
+        "AMD": 0.3333,
+        "TSM": 0.3333
+      },
+      "nav": 101.89233,
+      "change24h": 0.0006185407,
+      "buyCostBps": 61.178875,
+      "limitMinSlippageBps": 82,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "ETHSTACK",
+      "name": "Ethereum Economy",
+      "thesis": "The asset, and the two listed businesses standing closest to it — half in ether itself, half in the exchange and the issuer built on top.",
+      "vault": "0xD0794356c6Bf6DC67aCcB321FDC53761517F45eE",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 75,
+      "targetWeights": {
+        "ETH": 0.5,
+        "COIN": 0.25,
+        "CRCL": 0.25
+      },
+      "nav": 91.814445,
+      "change24h": -0.004025057,
+      "buyCostBps": 15.830913,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "NATIVE",
+      "name": "Chain Natives",
+      "thesis": "The chain’s own tokens alongside the two majors — the crypto side of Robinhood Chain, not the equities. Two of these have no published feed; they are priced from their own pools.",
+      "vault": "0x64371Dc3D699dC798B3775460Bf39162aECb01bD",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 95,
+      "targetWeights": {
+        "PONS": 0.25,
+        "UP": 0.25,
+        "ETH": 0.25,
+        "cbBTC": 0.25
+      },
+      "nav": 64.997541,
+      "change24h": -0.011100301,
+      "buyCostBps": 41.492627,
+      "limitMinSlippageBps": 62,
+      "group": "exotic",
+      "risk": "Holds Robinhood Chain’s own native tokens rather than Stock Tokens. Two have no published price feed and are valued from their own liquidity pools, so expect thinner liquidity and wider spreads than a common basket."
+    },
+    {
+      "ticker": "HARD",
+      "name": "Hard Assets",
+      "thesis": "Things nobody can print more of. Gold is the anchor at half, bitcoin a quarter, silver and crude oil the rest — scarce real assets in one position, monthly rebalanced.",
+      "vault": "0xE1932EB91a4306135CaB523678D18Dd07D702EE6",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 75,
+      "targetWeights": {
+        "GLD": 0.5,
+        "cbBTC": 0.25,
+        "SLV": 0.15,
+        "USO": 0.1
+      },
+      "nav": 94.373441,
+      "change24h": -0.0020981407,
+      "buyCostBps": 17.903653,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "BEDROCK",
+      "name": "All Weather",
+      "thesis": "Built for any weather. US stocks for growth, T-bills for yield and a floor, gold for when both go wrong — three sleeves in near-equal thirds, monthly rebalanced.",
+      "vault": "0xB84DA24d66783b031907dC8749Afec71990f2FAb",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 50,
+      "targetWeights": {
+        "SPY": 0.34,
+        "SGOV": 0.33,
+        "GLD": 0.33
+      },
+      "nav": 97.406418,
+      "change24h": -0.00020984618,
+      "buyCostBps": 5.0195311,
+      "limitMinSlippageBps": 50,
+      "group": "common",
+      "risk": null
+    },
+    {
+      "ticker": "TURBO",
+      "name": "Leveraged Tech",
+      "thesis": "Maximum-octane tech in one position: three-times-leveraged NVIDIA, the bitcoin treasury company, and SpaceX. Built to move far more than the market, in both directions.",
+      "vault": "0xD6732405722687Dd977A45Fd57dB43491946012e",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 95,
+      "targetWeights": {
+        "NVDAx3L": 0.4,
+        "MSTR": 0.3,
+        "SPCX": 0.3
+      },
+      "nav": 88.311612,
+      "change24h": -0.0025384474,
+      "buyCostBps": 27.801091,
+      "limitMinSlippageBps": 50,
+      "group": "exotic",
+      "risk": "Holds NVDAx3L, a daily-reset 3x leveraged NVIDIA token issued by Lighter × Long. Its issuer can pause or upgrade it with a single key, and a pause would block every TURBO sell and redemption, including the MSTR and SPCX legs, until it is lifted. Leveraged tokens also lose value in choppy markets. Size positions accordingly."
+    },
+    {
+      "ticker": "WAFER",
+      "name": "Chip Income",
+      "thesis": "The chipmakers, earning while you hold them. Each leg is a managed liquidity position on the stock against USDG that collects trading fees and compounds them — about half the chip exposure, plus the fees.",
+      "vault": "0x574f64A5660F241B990791489b9Af66DA2A2DF54",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 50,
+      "targetWeights": {
+        "AMD-LP": 0.3,
+        "MU-LP": 0.25,
+        "INTC-LP": 0.2,
+        "NVDA-LP": 0.15,
+        "SNDK-LP": 0.1
+      },
+      "nav": 98.095185,
+      "change24h": 0.000092965212,
+      "buyCostBps": 49.125,
+      "limitMinSlippageBps": 170,
+      "group": "yield",
+      "risk": "Each leg is a Beefy liquidity position, not the stock itself: roughly half stock and half USDG, it earns trading fees but trails simply holding the stock in a strong one-way move. Fee yields vary and come from small pools. Beefy can upgrade its contracts and tags most of these positions unaudited; if Beefy pauses one, selling for USDG waits, but redeeming the basket in kind always works."
+    },
+    {
+      "ticker": "COMET",
+      "name": "Frontier Income",
+      "thesis": "SpaceX, Circle, Tesla and Coinbase, earning while you hold them. Each leg is a managed liquidity position that collects trading fees and compounds them — about half the frontier exposure, plus the fees.",
+      "vault": "0x0f2278E43c406151EeD198B29c082115DbF4791f",
+      "rebalance": "monthly",
+      "mgmtFeeBps": 50,
+      "targetWeights": {
+        "SPCX-LP": 0.3,
+        "CRCL-LP": 0.25,
+        "TSLA-LP": 0.25,
+        "COIN-LP": 0.2
+      },
+      "nav": 100.34279,
+      "change24h": -0.00029852761,
+      "buyCostBps": 26.35,
+      "limitMinSlippageBps": 170,
+      "group": "yield",
+      "risk": "Each leg is a Beefy liquidity position, not the stock itself: roughly half stock and half USDG, it earns trading fees but trails simply holding the stock in a strong one-way move. Fee yields vary and come from small pools. Beefy can upgrade its contracts and tags most of these positions unaudited; if Beefy pauses one, selling for USDG waits, but redeeming the basket in kind always works."
+    }
+  ],
+  "asOfMs": 1792885362302,
+  "live": true
+}

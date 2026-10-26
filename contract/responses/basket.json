@@ -1,0 +1,32 @@
+{
+  "ticker": "DIGI64",
+  "name": "Digital 60/40",
+  "thesis": "The balanced portfolio, rebuilt — broad equity beta plus digital assets.",
+  "vault": "0x63e5dFBEC475b3afA031be9031e73aCdb6F1d559",
+  "rebalance": "monthly",
+  "mgmtFeeBps": 65,
+  "targetWeights": {
+    "SPY": 0.6,
+    "ETH": 0.4
+  },
+  "nav": 99.27764,
+  "change24h": -0.0035752081,
+  "buyCostBps": 3.4231288,
+  "limitMinSlippageBps": 50,
+  "group": "common",
+  "risk": null,
+  "constituents": [
+    {
+      "symbol": "SPY",
+      "address": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+      "targetWeight": 0.6,
+      "price": 762.39064
+    },
+    {
+      "symbol": "ETH",
+      "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "targetWeight": 0.4,
+      "price": 2354.2186
+    }
+  ]
+}

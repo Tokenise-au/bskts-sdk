@@ -1,0 +1,17 @@
+{
+  "ticker": "DIGI64",
+  "resolution": "1h",
+  "days": 7,
+  "summary": {
+    "candles": 168,
+    "from": 1792281600,
+    "to": 1792882800,
+    "open": 99.954841,
+    "last": 99.284198,
+    "high": 103.06749,
+    "low": 97.848241,
+    "change": -0.00670946,
+    "maxDrawdown": 0.050639128,
+    "volatility": 0.21959763
+  }
+}

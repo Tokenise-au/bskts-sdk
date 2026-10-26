@@ -24,6 +24,21 @@ pnpm run format       # oxfmt
 pnpm run check:packages  # publint + arethetypeswrong on the built packages
 ```
 
+### API contract
+
+`contract/` holds a snapshot of the bskts API: its [openapi.json](https://api.bskts.xyz/openapi.json) and one live response from each public read the SDK parses. The contract tests (`packages/*/src/contract.test.ts`) check the SDK and the MCP tools against it, offline:
+
+- **Requests** (`AgentOrderRequest` for `POST /v1/agent/order`, so far): the SDK's argument types must require exactly the fields the API requires, and the SDK and the `bskts_agent_order` tool must refuse, before sending, every value the API refuses (each bound, integers, and for the tool required fields and patterns), and send every value it accepts. Where a client is deliberately stricter, the test names the case and the reason.
+- **Responses**: parsing each snapshot must not strip a field. A new field the API sends fails until it is in `packages/sdk/src/schemas.ts`.
+
+When the API changes, refresh the snapshot before changing the SDK to match, and commit `contract/` with the change:
+
+```bash
+pnpm run contract:refresh
+```
+
+The `API contract (live)` workflow (`.github/workflows/contract.yml`) does the same every day against the live API, and fails when the SDK no longer matches it or when `openapi.json` has moved on from the snapshot.
+
 A change users would notice needs a changeset (`pnpm changeset`); see [.changeset/README.md](.changeset/README.md). Releases are staged from CI with npm trusted publishing and go live when a maintainer approves them with 2FA.
 
 ## Security
