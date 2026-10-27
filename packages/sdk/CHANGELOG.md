@@ -1,5 +1,11 @@
 # @bskts/sdk
 
+## 0.9.1
+
+### Patch Changes
+
+- f1ff76d: `jobs()` keeps the API's `vaults` count, which the schema used to drop. The vendored API contract now includes `GET /v1/jobs`, so a field the SDK drops from it fails a test.
+
 ## 0.9.0
 
 ### Minor Changes
