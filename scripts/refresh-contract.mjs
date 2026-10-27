@@ -46,6 +46,8 @@ const responses = {
   "nav-closes": await get(`/v1/nav/${ticker}/history?format=close&res=1d&days=7`),
   "cover-weeks": await get("/v1/cover/weeks"),
   "cover-book": await get(`/v1/cover/book/${ticker}`),
+  // 2026-10-27: read by the skill's update check (packages/skill/src/update.mjs)
+  "agent-skill": await get("/v1/agent/skill"),
 };
 for (const [name, body] of Object.entries(responses)) await write(`responses/${name}.json`, body);
 console.log(`contract refreshed from ${new URL(base).host} into ${out} (basket ${ticker})`);
