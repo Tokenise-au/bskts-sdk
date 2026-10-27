@@ -247,6 +247,7 @@
               "NO_ROUTE",
               "NO_REFERENCE",
               "ORDER_NOT_OPEN",
+              "ORDER_AMBIGUOUS",
               "INSUFFICIENT_SHARES",
               "INSUFFICIENT_FUNDS",
               "SESSION_INACTIVE",
@@ -368,6 +369,16 @@
           },
           "502": {
             "description": "RPC unavailable"
+          }
+        }
+      }
+    },
+    "/v1/agent/skill": {
+      "get": {
+        "summary": "The bskts skill's latest release, for an installed skill to compare itself with",
+        "responses": {
+          "200": {
+            "description": "latest (semver), released (date), changes (newest first: version and text), update (the skills CLI command for a global install), reinstall (for a copy not installed with the CLI) and source (the skill's folder on GitHub). Cached 5 minutes."
           }
         }
       }
@@ -1207,7 +1218,7 @@
     },
     "/v1/tx/cancel": {
       "post": {
-        "summary": "Build unsigned order withdraw. escrow is optional: when omitted it is looked up from the order index",
+        "summary": "Build unsigned order withdraw. Pass escrow with orderId (both from GET /v1/orders): each escrow numbers ids from 1, so one id can be open on several. When escrow is omitted the order index is searched, narrowed to address when given, and more than one open match is refused with ORDER_AMBIGUOUS rather than guessed",
         "requestBody": {
           "required": true,
           "content": {
@@ -1220,11 +1231,12 @@
                     "type": "string"
                   },
                   "escrow": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "the escrow the order is on (GET /v1/orders); recommended"
                   },
                   "address": {
                     "type": "string",
-                    "description": "the owner, to simulate the cancel"
+                    "description": "the owner: narrows the lookup to their orders and simulates the cancel"
                   }
                 }
               }
@@ -1239,10 +1251,10 @@
             "description": "escrow given but not a bskts escrow"
           },
           "404": {
-            "description": "order not in the index: pass escrow"
+            "description": "order not in the index (or not the address's): pass escrow"
           },
           "409": {
-            "description": "order already filled or cancelled"
+            "description": "ORDER_NOT_OPEN (already filled or cancelled) or ORDER_AMBIGUOUS (the id is open on more than one escrow: pass escrow)"
           }
         }
       }
