@@ -63,6 +63,10 @@ const responses = {
   "cover-book": await get(`/v1/cover/book/${ticker}`),
   // 2026-10-27: read by the skill's update check (packages/skill/src/update.mjs)
   "agent-skill": await get("/v1/agent/skill"),
+  // 2026-10-27 (bskts agent audit F7): the API pages jobs and says whether a
+  // list is complete; vendored so a field the SDK drops fails a test. Only
+  // public jobs: order ids, vaults and calldata, nothing personal.
+  jobs: await get("/v1/jobs"),
 };
 for (const [name, body] of Object.entries(responses)) await write(`responses/${name}.json`, body);
 console.log(`contract refreshed from ${new URL(base).host} into ${out} (basket ${ticker})`);
