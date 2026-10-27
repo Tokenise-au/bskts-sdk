@@ -19,6 +19,9 @@ are how agents and developers trade it.
   downloads). Every merge to `main` that touches `skills/` reaches users on their next
   `npx skills update`, so treat it as a release: bump `version:` in `SKILL.md` and
   `SKILL_VERSION` in the source together (a test keeps them equal), then tag `skill-v<version>`.
+  Once it is on `main`, bump `AGENT_SKILL_LATEST` in the bskts repo (`src/lib/agent-skill.ts`,
+  with a line for what changed): installed skills compare themselves with it through
+  `GET /v1/agent/skill` and tell their owners, and the Agents tab shows it (2026-10-27).
 - **Resolve a token by symbol.** Addresses come from the API only; the chain has impostor tokens.
 - **Use a price feed or third-party price API.** Prices come from the bskts API (on-chain pools).
 - **Hand-edit `CHANGELOG.md` or package versions.** Changesets owns them.

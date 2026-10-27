@@ -25,6 +25,7 @@ import * as sdk from "@bskts/sdk";
 import { fileSessionStore } from "@bskts/sdk/node";
 import { createPublicClient, http } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { latestRelease, updateView } from "./update.mjs";
 
 const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-agent"));
 const ENV_FILE = join(HOME, ".env");
@@ -35,12 +36,15 @@ const RPC = "https://bskts.xyz/rpc";
 // keeps them equal). skills.sh tracks installs by content hash only, so this
 // is how a person or agent tells which build is running when debugging.
 // Bump it with any change under skills/ and tag main skill-v<version>.
-const SKILL_VERSION = "1.2.0";
+// 2026-10-27: then, once it's on main, AGENT_SKILL_LATEST in the bskts repo
+// (src/lib/agent-skill.ts): installed copies compare themselves with it.
+const SKILL_VERSION = "1.3.0";
 
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
-  version                    this skill's version
+  version                    this skill's version, and \`update\` if a newer one is out
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
-  status                     live permission: active, limits, remaining today, account USDG
+  status                     live permission: active, limits, remaining today, account USDG;
+                             \`update\` if a newer skill is out
   markets                    every basket: NAV, 24h change, buy cost
   basket TICKER              one basket: thesis, constituents, risk
   positions                  the bskts account's holdings and PnL
@@ -280,10 +284,17 @@ async function withAgent(fn) {
   return fn({ ...ctx, owner: env.BSKTS_OWNER, agent });
 }
 
+// 2026-10-27: status also says when a newer skill is out (update.mjs), read
+// alongside the session so it adds no wait; a check that fails is left out.
 const status = () =>
-  withAgent(async ({ client, owner, agent }) =>
-    out({ ok: true, ...sessionView(await client.agentSession({ owner, key: agent.address })) }),
-  );
+  withAgent(async ({ client, owner, agent }) => {
+    const [s, release] = await Promise.all([
+      client.agentSession({ owner, key: agent.address }),
+      latestRelease(client.baseUrl),
+    ]);
+    const update = updateView(SKILL_VERSION, release);
+    out({ ok: true, ...sessionView(s), ...(update ? { update } : {}) });
+  });
 
 const markets = async () => {
   const { client } = await load();
@@ -666,7 +677,10 @@ function cover(intent) {
 // ---- main -------------------------------------------------------------------
 
 const COMMANDS = {
-  version: async () => out({ ok: true, skillVersion: SKILL_VERSION }),
+  version: async () => {
+    const update = updateView(SKILL_VERSION, await latestRelease(sdk.DEFAULT_API_URL));
+    out({ ok: true, skillVersion: SKILL_VERSION, ...(update ? { update } : {}) });
+  },
   setup: (_, f) => setup(f),
   status,
   markets,

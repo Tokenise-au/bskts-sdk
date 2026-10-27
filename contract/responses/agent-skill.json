@@ -1,0 +1,15 @@
+{
+  "latest": "1.3.0",
+  "released": "2026-10-27",
+  "changes": [
+    { "version": "1.3.0", "text": "Tells you when a newer version is out." },
+    {
+      "version": "1.2.0",
+      "text": "Stop-loss, take-profit and bracket orders, and limit buys on a rise, each with a preview of what it means against the price now."
+    },
+    { "version": "1.1.0", "text": "Limit buys at a NAV you choose." }
+  ],
+  "update": "npx skills update bskts -g",
+  "reinstall": "npx skills add Tokenise-au/bskts-sdk --skill bskts -g",
+  "source": "https://github.com/Tokenise-au/bskts-sdk/tree/main/skills/bskts"
+}

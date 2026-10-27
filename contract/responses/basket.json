@@ -9,10 +9,11 @@
     "SPY": 0.6,
     "ETH": 0.4
   },
-  "nav": 99.27764,
-  "change24h": -0.0035752081,
-  "buyCostBps": 3.4231288,
+  "nav": 99.161219,
+  "change24h": 0.0030518962,
+  "buyCostBps": 3.4212102,
   "limitMinSlippageBps": 50,
+  "exitMinSlippageBps": 50,
   "group": "common",
   "risk": null,
   "constituents": [
@@ -20,13 +21,13 @@
       "symbol": "SPY",
       "address": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
       "targetWeight": 0.6,
-      "price": 762.39064
+      "price": 767.55485
     },
     {
       "symbol": "ETH",
       "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
       "targetWeight": 0.4,
-      "price": 2354.2186
+      "price": 2323.0469
     }
   ]
 }

@@ -48,7 +48,12 @@
               "triggerNav": {
                 "type": "number",
                 "exclusiveMinimum": 0,
-                "description": "Fill when the 10-minute pool-average NAV per share is at or below this, in USDG."
+                "description": "Fill when the 10-minute pool-average NAV per share reaches this, in USDG: at or below it by default, at or above it with triggerBelow false."
+              },
+              "triggerBelow": {
+                "default": true,
+                "description": "true (default): fill when NAV <= triggerNav, a dip buy. false: fill when NAV >= triggerNav, a breakout buy, which can fill above the trigger.",
+                "type": "boolean"
               },
               "expiryDays": {
                 "default": 30,
@@ -99,7 +104,115 @@
                 "pattern": "^0x[0-9a-fA-F]{40}$"
               },
               "orderId": {
-                "description": "Open limit order id, from GET /v1/orders/{account}.",
+                "description": "Open limit buy id (kind limit_buy), from GET /v1/orders/{account}.",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{64}$"
+              },
+              "feeUsdg": {
+                "description": "Network fee the account repays, USDG base units. The relayer quotes it (402) when too low.",
+                "default": "0",
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            },
+            "required": ["kind", "owner", "key", "orderId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "exit"
+              },
+              "owner": {
+                "description": "The owner's public login wallet (not the bskts account).",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{40}$"
+              },
+              "key": {
+                "description": "The agent's public signing address. Never send a private key.",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{40}$"
+              },
+              "ticker": {
+                "description": "Basket ticker, as GET /v1/baskets lists it (case-insensitive).",
+                "type": "string",
+                "minLength": 1
+              },
+              "shares": {
+                "description": "Shares to escrow, a 1e18 integer string (walletSharesWei on GET /v1/positions), or \"max\" for all the account holds outside orders.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "max"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\d+$"
+                  }
+                ]
+              },
+              "stopNav": {
+                "description": "Stop-loss: sell when the 10-minute pool-average NAV per share is at or below this, in USDG. Must be under the current NAV.",
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "tpNav": {
+                "description": "Take-profit: sell when the 10-minute pool-average NAV per share is at or above this, in USDG. Must be over the current NAV. Both edges make a bracket: one fill closes it.",
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "expiryDays": {
+                "default": 30,
+                "description": "Days the order rests, 1-90; never past the session's expiry.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 90
+              },
+              "slippageBps": {
+                "type": "integer",
+                "minimum": 50,
+                "maximum": 1000,
+                "description": "Widest the sale's floor may open under NAV, in bps, the 0.2% sell fee and pool costs included. Required: at most the session's maxSlippageBps (GET /v1/agent/session) and at least the basket's exitMinSlippageBps (GET /v1/markets or /v1/baskets), or the order could never fill. The app uses 300."
+              },
+              "feeUsdg": {
+                "description": "Network fee the account repays, USDG base units. The relayer quotes it (402) when too low.",
+                "default": "0",
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            },
+            "required": ["kind", "owner", "key", "ticker", "shares", "slippageBps"],
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "required": ["stopNav"]
+              },
+              {
+                "required": ["tpNav"]
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "cancel-exit"
+              },
+              "owner": {
+                "description": "The owner's public login wallet (not the bskts account).",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{40}$"
+              },
+              "key": {
+                "description": "The agent's public signing address. Never send a private key.",
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]{40}$"
+              },
+              "orderId": {
+                "description": "Open exit id (kind stop_loss, take_profit or bracket, escrow SellEscrowV4), from GET /v1/orders/{account}. Limit and exit ids are numbered apart and can be equal: kind picks the escrow.",
                 "type": "string",
                 "pattern": "^0x[0-9a-fA-F]{64}$"
               },
@@ -115,7 +228,7 @@
           }
         ],
         "title": "AgentOrderRequest",
-        "description": "A delegated limit buy, or the cancellation of one. Nothing is signed or sent."
+        "description": "A delegated limit buy, a stop-loss / take-profit / bracket exit, or the cancellation of either. Nothing is signed or sent."
       },
       "Error": {
         "type": "object",
@@ -261,7 +374,7 @@
     },
     "/v1/agent/order": {
       "post": {
-        "summary": "Build an unsigned delegated limit buy or cancellation; no signing or sending",
+        "summary": "Build an unsigned delegated limit buy, stop-loss / take-profit / bracket exit, or cancellation of either, with a preview; no signing or sending",
         "requestBody": {
           "required": true,
           "content": {
@@ -274,16 +387,16 @@
         },
         "responses": {
           "200": {
-            "description": "Unsigned action, typedData, live status, decoded terms, relayerUrl and unsigned simulation status. Placement is not a fill. List via /v1/orders/{account}."
+            "description": "Unsigned action, typedData, live status, decoded terms, preview, relayerUrl and unsigned simulation status. preview: the 10-minute pool-average NAV now (navNow), each trigger and its % from navNow; for an exit, returns at each edge against the account's avgEntry (price, estimated net and worst net of the 0.2% sell fee, filler fee and maxSlippageBps); for a limit, the worst price per share. Triggers are on NAV: a price return, not net profit. Placement is not a fill. List via /v1/orders/{account}."
           },
           "400": {
-            "description": "BAD_REQUEST: the error names the field and its range, e.g. a missing slippageBps or one under the basket's fill cost"
+            "description": "BAD_REQUEST: the error names the field and its range, e.g. a missing slippageBps or one under the basket's fill cost, or an exit edge the NAV has already crossed"
           },
           "403": {
             "description": "SESSION_INACTIVE, or SESSION_LIMIT: turnover, or slippage outside the owner's grant (the error gives the grant's maximum); wrong order owner"
           },
           "422": {
-            "description": "NO_REFERENCE, INSUFFICIENT_FUNDS or ORDER_NOT_OPEN"
+            "description": "NO_REFERENCE, INSUFFICIENT_FUNDS, INSUFFICIENT_SHARES or ORDER_NOT_OPEN"
           },
           "503": {
             "description": "PAUSED"
@@ -583,7 +696,7 @@
     },
     "/v1/baskets": {
       "get": {
-        "summary": "List baskets with live marks (nav, 24h change, buyCostBps, limitMinSlippageBps, group, risk)",
+        "summary": "List baskets with live marks (nav, 24h change, buyCostBps, limitMinSlippageBps, exitMinSlippageBps, group, risk)",
         "responses": {
           "200": {
             "description": "ok"

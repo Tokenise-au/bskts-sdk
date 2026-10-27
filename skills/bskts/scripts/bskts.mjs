@@ -29500,16 +29500,58 @@ function privateKeyToAccount(privateKey, options = {}) {
 }
 
 //#endregion
+//#region src/update.mjs
+const UPDATE_COMMAND = "npx skills update bskts -g";
+const REINSTALL_COMMAND = "npx skills add Tokenise-au/bskts-sdk --skill bskts -g";
+const WHATS_NEW = "https://bskts.xyz/account/agents";
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+/** Below 0, 0 or above 0 as `a` is older than, equal to or newer than `b`. */
+function compareVersions(a, b) {
+	const x = SEMVER.exec(a);
+	const y = SEMVER.exec(b);
+	if (!x || !y) throw new Error(`not a version: ${x ? b : a}`);
+	for (let i = 1; i <= 3; i++) {
+		const d = Number(x[i]) - Number(y[i]);
+		if (d) return d;
+	}
+	return 0;
+}
+/** The `update` block for `status`, or undefined when this copy is current or
+*  the release can't be read: an update check never fails a command. */
+function updateView(current, release) {
+	const latest = release && typeof release === "object" ? release.latest : void 0;
+	if (typeof latest !== "string" || !SEMVER.test(latest)) return void 0;
+	if (compareVersions(latest, current) <= 0) return void 0;
+	return {
+		current,
+		latest,
+		command: UPDATE_COMMAND,
+		reinstall: REINSTALL_COMMAND,
+		whatsNew: WHATS_NEW
+	};
+}
+/** GET /v1/agent/skill, or undefined if it doesn't answer within 3 s. */
+async function latestRelease(baseUrl, fetchFn = fetch) {
+	try {
+		const res = await fetchFn(`${baseUrl}/v1/agent/skill`, { signal: AbortSignal.timeout(3e3) });
+		return res.ok ? await res.json() : void 0;
+	} catch {
+		return;
+	}
+}
+
+//#endregion
 //#region src/bskts.mjs
 const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-agent"));
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.2.0";
+const SKILL_VERSION = "1.3.0";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
-  version                    this skill's version
+  version                    this skill's version, and \`update\` if a newer one is out
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
-  status                     live permission: active, limits, remaining today, account USDG
+  status                     live permission: active, limits, remaining today, account USDG;
+                             \`update\` if a newer skill is out
   markets                    every basket: NAV, 24h change, buy cost
   basket TICKER              one basket: thesis, constituents, risk
   positions                  the bskts account's holdings and PnL
@@ -29725,13 +29767,18 @@ async function withAgent(fn) {
 		agent
 	});
 }
-const status = () => withAgent(async ({ client, owner, agent }) => out({
-	ok: true,
-	...sessionView(await client.agentSession({
+const status = () => withAgent(async ({ client, owner, agent }) => {
+	const [s, release] = await Promise.all([client.agentSession({
 		owner,
 		key: agent.address
-	}))
-}));
+	}), latestRelease(client.baseUrl)]);
+	const update = updateView(SKILL_VERSION, release);
+	out({
+		ok: true,
+		...sessionView(s),
+		...update ? { update } : {}
+	});
+});
 const markets = async () => {
 	const { client } = await load();
 	out({
@@ -30056,10 +30103,14 @@ function cover(intent) {
 	});
 }
 const COMMANDS = {
-	version: async () => out({
-		ok: true,
-		skillVersion: SKILL_VERSION
-	}),
+	version: async () => {
+		const update = updateView(SKILL_VERSION, await latestRelease(DEFAULT_API_URL));
+		out({
+			ok: true,
+			skillVersion: SKILL_VERSION,
+			...update ? { update } : {}
+		});
+	},
 	setup: (_, f) => setup(f),
 	status,
 	markets,
