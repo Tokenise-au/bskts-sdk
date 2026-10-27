@@ -13,9 +13,10 @@
 //
 // Reads only public GET endpoints with no address in them: nothing personal is
 // vendored. BSKTS_API_URL overrides the API (default https://api.bskts.xyz).
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { format } from "oxfmt";
 
 const base = (process.env.BSKTS_API_URL ?? "https://api.bskts.xyz").replace(/\/$/, "");
 const out = fileURLToPath(new URL("../contract", import.meta.url));
@@ -25,8 +26,22 @@ async function get(path) {
   if (!res.ok) throw new Error(`${path} answered ${res.status}`);
   return res.json();
 }
-// oxfmt's JSON style, so a refresh leaves `pnpm run format:check` clean
-const write = (file, v) => writeFile(join(out, file), JSON.stringify(v, null, 2) + "\n");
+// Through oxfmt itself, with the repo's settings, so a refresh leaves
+// `pnpm run format:check` clean. 2026-10-27: plain JSON.stringify(v, null, 2)
+// put every array on its own lines where oxfmt joins short ones, and
+// format:check failed on openapi.json and nav-closes.json after a refresh.
+// Fed indented, not compact: oxfmt keeps an object expanded only when its
+// source breaks after the `{`, as `oxfmt` on the file would see it.
+const {
+  $schema: _,
+  ignorePatterns: __,
+  ...fmtOptions
+} = JSON.parse(await readFile(fileURLToPath(new URL("../.oxfmtrc.json", import.meta.url)), "utf8"));
+async function write(file, v) {
+  const { code, errors } = await format(file, JSON.stringify(v, null, 2), fmtOptions);
+  if (errors.length) throw new Error(`oxfmt could not format ${file}: ${errors[0].message}`);
+  await writeFile(join(out, file), code);
+}
 
 await mkdir(join(out, "responses"), { recursive: true });
 await write("openapi.json", await get("/openapi.json"));
