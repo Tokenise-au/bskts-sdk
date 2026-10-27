@@ -142,6 +142,57 @@ describe("bskts MCP server", () => {
     expect(calls).toEqual([]);
   });
 
+  // 2026-10-27: every escrow numbers orders from 1, so a cancel without escrow
+  // could withdraw the wrong order; the API now refuses it as ORDER_AMBIGUOUS
+  // (audit F3) and the tool must let the caller name the escrow.
+  it("exposes and forwards a cancel's escrow", async () => {
+    const mcp0 = await connect(api({}).client);
+    const order = (await mcp0.listTools()).tools.find((t) => t.name === "bskts_order")!;
+    const props = order.inputSchema.properties as Record<string, { description?: string }>;
+    expect(props.escrow?.description).toMatch(/bskts_account.*recommended/);
+    expect(order.inputSchema.required).not.toContain("escrow");
+
+    const escrow = "0x00000000000000000000000000000000000E5C70";
+    const orderId = `0x${"07".padStart(64, "0")}`;
+    const { client, calls } = api({ "/v1/tx/cancel": PLAN });
+    const mcp = await connect(client);
+    const r = await mcp.callTool({
+      name: "bskts_order",
+      arguments: { kind: "cancel", address: ADDR, orderId, escrow },
+    });
+    expect(r.isError).toBeFalsy();
+    expect(calls).toEqual([
+      { path: "/v1/tx/cancel", body: { kind: "cancel", orderId, address: ADDR, escrow } },
+    ]);
+    const bad = await mcp.callTool({
+      name: "bskts_order",
+      arguments: { kind: "cancel", address: ADDR, orderId, escrow: "0x1234" },
+    });
+    expect(bad.isError).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("asks for escrow when the API finds the order id ambiguous", async () => {
+    const { client } = api({
+      "/v1/tx/cancel": [
+        409,
+        {
+          error: "order id 0x07 is open on 2 escrows (0xa, 0xb): pass body.escrow",
+          code: "ORDER_AMBIGUOUS",
+        },
+      ],
+    });
+    const r = await (
+      await connect(client)
+    ).callTool({
+      name: "bskts_order",
+      arguments: { kind: "cancel", address: ADDR, orderId: `0x${"07".padStart(64, "0")}` },
+    });
+    expect(r.isError).toBe(true);
+    expect(text(r)).toMatchObject({ code: "ORDER_AMBIGUOUS", retryable: false });
+    expect(text(r).error).toMatch(/again with escrow/);
+  });
+
   it("rejects bad arguments before calling the API", async () => {
     const { client, calls } = api({});
     const r = await (

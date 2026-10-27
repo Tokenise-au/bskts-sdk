@@ -181,7 +181,7 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
     {
       title: "Build a bskts order",
       description:
-        "Build an UNSIGNED resting order. limit: buy amountUsdg when the 10-minute average NAV <= triggerNav (omit for market; USDG escrowed until filled or cancelled). exit: stop-loss (stopNav), take-profit (tpNav) or both on exact `shares`. cancel: withdraw orderId (from bskts_account). NAV levels in dollars. Same signing order as bskts_buy.",
+        "Build an UNSIGNED resting order. limit: buy amountUsdg when the 10-minute average NAV <= triggerNav (omit for market; USDG escrowed until filled or cancelled). exit: stop-loss (stopNav), take-profit (tpNav) or both on exact `shares`. cancel: withdraw orderId with its escrow (both from bskts_account). NAV levels in dollars. Same signing order as bskts_buy.",
       inputSchema: {
         kind: z.enum(["limit", "exit", "cancel"]),
         address,
@@ -197,21 +197,41 @@ export function registerBsktsTools(server: McpServer, client: BsktsClient) {
           .regex(/^0x[0-9a-fA-F]{64}$/)
           .optional()
           .describe("cancel: the order id"),
+        // 2026-10-27: every escrow numbers its orders from 1, so one id is often
+        // open on several; the API guessed and could withdraw the wrong order
+        // (audit F3), and now refuses with ORDER_AMBIGUOUS without escrow.
+        escrow: z
+          .string()
+          .regex(/^0x[0-9a-fA-F]{40}$/)
+          .optional()
+          .describe("cancel: the escrow from bskts_account / GET /v1/orders; recommended")
+          .transform((e) => e as Address | undefined),
       },
       annotations: BUILD,
     },
     (a) =>
-      run(() => {
+      run(async () => {
         const need = (v: unknown, name: string) => {
           if (v == null) throw new BsktsError(`${a.kind} needs ${name}`, "BAD_REQUEST");
         };
         if (a.kind === "cancel") {
           need(a.orderId, "orderId");
-          return client.buildOrder({
-            kind: "cancel",
-            orderId: a.orderId as `0x${string}`,
-            address: a.address,
-          });
+          try {
+            return await client.buildOrder({
+              kind: "cancel",
+              orderId: a.orderId as `0x${string}`,
+              address: a.address,
+              ...(a.escrow ? { escrow: a.escrow } : {}),
+            });
+          } catch (e) {
+            if (e instanceof BsktsError && e.code === "ORDER_AMBIGUOUS")
+              throw new BsktsError(
+                `${e.message}. Call bskts_order again with escrow: the order's escrow from bskts_account.`,
+                "ORDER_AMBIGUOUS",
+                { status: e.status, detail: e.detail, cause: e },
+              );
+            throw e;
+          }
         }
         need(a.ticker, "ticker");
         if (a.kind === "exit") {

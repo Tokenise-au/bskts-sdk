@@ -27744,7 +27744,9 @@ const pins = Object.freeze({
 	NATIVE: "0x64371Dc3D699dC798B3775460Bf39162aECb01bD",
 	HARD: "0xE1932EB91a4306135CaB523678D18Dd07D702EE6",
 	BEDROCK: "0xB84DA24d66783b031907dC8749Afec71990f2FAb",
-	TURBO: "0xD6732405722687Dd977A45Fd57dB43491946012e"
+	TURBO: "0xD6732405722687Dd977A45Fd57dB43491946012e",
+	WAFER: "0x574f64A5660F241B990791489b9Af66DA2A2DF54",
+	COMET: "0x0f2278E43c406151EeD198B29c082115DbF4791f"
 });
 function isAgentVault(ticker, vault) {
 	const name = ticker.toUpperCase();
@@ -29546,7 +29548,7 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.3.0";
+const SKILL_VERSION = "1.3.1";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version, and \`update\` if a newer one is out
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link

@@ -90,10 +90,12 @@ await bskts.execute(
   sender,
 );
 
-// cancel
+// cancel: pass the order's escrow too. Every escrow numbers its orders from 1, so one
+// id can be open on several, and without escrow the API refuses with ORDER_AMBIGUOUS
 const { orders } = await bskts.orders(me);
+const [o] = orders;
 await bskts.execute(
-  await bskts.buildOrder({ kind: "cancel", orderId: orders[0].id, address: me }),
+  await bskts.buildOrder({ kind: "cancel", orderId: o.id, escrow: o.escrow, address: me }),
   sender,
 );
 ```
@@ -109,6 +111,7 @@ Every failure is a `BsktsError` with `code`, `retryable` and `detail`:
 | `INSUFFICIENT_SHARES`                                          | selling more than the wallet holds (escrowed shares must be cancelled out of their order first)     |
 | `NO_ROUTE`                                                     | a constituent has no route right now: that basket can't be bought or sold through the API           |
 | `NO_REFERENCE`                                                 | limit / exit orders unavailable for this basket (market buys and sells work)                        |
+| `ORDER_AMBIGUOUS`                                              | a cancel's `orderId` is open on more than one escrow: pass `escrow` from `orders()`                 |
 | `UNKNOWN_BASKET`, `BAD_REQUEST`, `ORDER_NOT_OPEN`, `NOT_FOUND` | fix the request                                                                                     |
 | `PAUSED`, `UPSTREAM`, `SERVER`, `NETWORK`                      | `retryable: true`: try again later (except `NETWORK` from `sessionRelayer`: see `UNCERTAIN`)        |
 | `FEE_REQUIRED`                                                 | the relayer quoted `detail.requiredFee`; `executeSession` re-signs the same action within your cap  |
