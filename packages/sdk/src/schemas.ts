@@ -281,6 +281,8 @@ export const jobsResponse = z.object({
   /** pass to jobs({ cursor }) for the next page; null at the end of a full pass */
   next: z.string().nullable().optional(),
   scan: z.object({ sell: jobKindScan, limit: jobKindScan, schedule: jobKindScan }).optional(),
+  /** how many basket vaults the API knows (each candidate's vault is one of them) */
+  vaults: num.optional(),
   note: z.string(),
 });
 

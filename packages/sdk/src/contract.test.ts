@@ -196,6 +196,7 @@ describe("responses: the SDK's schemas keep every field the API sends", () => {
     ["GET /v1/nav/{ticker}/history?format=close", "nav-closes", s.closesResponse],
     ["GET /v1/cover/weeks", "cover-weeks", s.coverWeeksResponse],
     ["GET /v1/cover/book/{ticker}", "cover-book", s.coverBookResponse],
+    ["GET /v1/jobs", "jobs", s.jobsResponse],
   ];
   for (const [route, file, schema] of responses)
     it(route, () => {

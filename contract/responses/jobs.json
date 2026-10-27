@@ -1,0 +1,29 @@
+{
+  "asOf": "2026-10-27T04:31:58.022Z",
+  "jobs": [],
+  "skipped": [],
+  "complete": true,
+  "next": null,
+  "scan": {
+    "sell": {
+      "index": "ok",
+      "offset": 0,
+      "scanned": 1,
+      "more": false
+    },
+    "limit": {
+      "index": "ok",
+      "offset": 0,
+      "scanned": 0,
+      "more": false
+    },
+    "schedule": {
+      "index": "ok",
+      "offset": 0,
+      "scanned": 0,
+      "more": false
+    }
+  },
+  "vaults": 17,
+  "note": "Every job was checked on chain for this response (open, unexpired, triggered on the TwapNav NAV, the schedule due and funded). Each kind reads up to 25 open orders (100 schedules) per request: follow next (?cursor=) until it is null for a full pass. complete is false while more remain or an index is unavailable (scan.<kind>.index), which is not the same as no jobs. Simulate before sending: a job can be taken, or miss its floor, in between. Routes use minOut 0; the contracts enforce the floors. A fill that misses the floor can be armed (armData) and retried; the floor relaxes toward the owner's maximum over 10 minutes while kept armed (re-arm within 90 s)."
+}

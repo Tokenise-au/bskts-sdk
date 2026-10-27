@@ -28119,6 +28119,8 @@ const jobsResponse = object({
 		limit: jobKindScan,
 		schedule: jobKindScan
 	}).optional(),
+	/** how many basket vaults the API knows (each candidate's vault is one of them) */
+	vaults: num.optional(),
 	note: string()
 });
 const apiErrorBody = object({
@@ -29611,7 +29613,7 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.3.2";
+const SKILL_VERSION = "1.3.3";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version, and \`update\` if a newer one is out
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link

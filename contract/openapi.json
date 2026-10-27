@@ -936,10 +936,21 @@
     },
     "/v1/jobs": {
       "get": {
-        "summary": "Every public job executable right now (triggered stops / take-profits, triggered limit buys, due Subscribe / TWAP buys), each with calldata, the executor fee and armData",
+        "summary": "Public jobs executable right now (triggered stops / take-profits, triggered limit buys, due Subscribe / TWAP buys), each with calldata, the executor fee and armData. Paged per kind: follow `next` as ?cursor= until it is null for a full pass.",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The previous response's `next` (sell:N,limit:N,schedule:N); omit to start",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "{asOf, jobs: [{type, contract, id, ticker, vault, feeUsdg, slippageBps, tx, armData}], skipped, note}"
+            "description": "{asOf, jobs: [{type, contract, id, ticker, vault, feeUsdg, slippageBps, tx, armData}], skipped, complete, next, scan: {sell|limit|schedule: {index: ok|unavailable|not-configured, offset, scanned, more, error?}}, note}. complete is false while a kind has more or its index is unavailable: an empty `jobs` then does not mean there is no work."
           }
         }
       }
@@ -1208,7 +1219,7 @@
     },
     "/mcp": {
       "post": {
-        "summary": "MCP server (Streamable HTTP, stateless, JSON responses): the bskts tools for agents (markets, basket, account, buy, sell, order, guide). Unsigned only. JSON-RPC 2.0 body per the Model Context Protocol.",
+        "summary": "MCP server (Streamable HTTP, stateless, JSON responses): the 12 bskts tools of @bskts/mcp 0.5.1+ (bskts_markets, bskts_basket, bskts_account, bskts_buy, bskts_sell, bskts_order, bskts_cover, bskts_agent_session, bskts_agent_trade, bskts_agent_order, bskts_agent_cover, bskts_guide). Unsigned only. JSON-RPC 2.0 body per the Model Context Protocol.",
         "responses": {
           "200": {
             "description": "JSON-RPC response"
