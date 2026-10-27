@@ -13,6 +13,7 @@ import {
   requestSchema,
   strippedKeys,
 } from "../../../contract/contract";
+import { isAgentVault } from "./agent-vaults";
 import { BsktsClient } from "./client";
 import * as s from "./schemas";
 
@@ -204,4 +205,17 @@ describe("responses: the SDK's schemas keep every field the API sends", () => {
       // a field here is one the API sends and SDK users never see: add it to schemas.ts
       expect(strippedKeys(raw, parsed.data)).toEqual([]);
     });
+});
+
+// 2026-10-27: WAFER and COMET went live on 2026-10-19 without pins, so the SDK
+// refused every delegated trade on them (audit F2) and no test noticed. A
+// failure here after a contract refresh means a basket needs a pin, reviewed
+// against the app's contracts.ts, never copied from this file.
+describe("agent vault pins cover every basket the API lists", () => {
+  const { indexes } = readContract("responses/baskets.json") as {
+    indexes: { ticker: string; vault: string }[];
+  };
+  it.each(indexes.map((b) => [b.ticker, b.vault]))("%s", (ticker, vault) => {
+    expect(isAgentVault(ticker, vault)).toBe(true);
+  });
 });

@@ -13,7 +13,7 @@ The [bskts API](https://api.bskts.xyz) as tools for Claude, ChatGPT, Cursor and 
 | `bskts_account` | an address's ETH / USDG, gasOk, positions with PnL, open orders                        |
 | `bskts_buy`     | unsigned buy for USDG, with the API's dry run                                          |
 | `bskts_sell`    | unsigned sale for USDG (`shares: "max"` by default, or exact wei; optional `fraction`) |
-| `bskts_order`   | unsigned limit buy, stop-loss / take-profit, or cancel                                 |
+| `bskts_order`   | unsigned limit buy, stop-loss / take-profit, or cancel (pass the order's `escrow`)     |
 | `bskts_guide`   | the full trading guide, on demand                                                      |
 
 All tools are annotated read-only: even the build tools only return data. The rules an agent needs (units, approval order, never send a failed dry run) are in the descriptions and the server instructions.

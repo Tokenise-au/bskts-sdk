@@ -1,7 +1,7 @@
 ---
 name: bskts
 description: Trade bskts tokenized index baskets (stock tokens and crypto on Robinhood Chain) from the owner's bskts account with this agent's own limited key. Use when the user wants to set up bskts trading, check basket markets or positions, buy or sell a basket, place or cancel a limit buy, stop-loss or take-profit, or buy Weekend Cover (protection against a weekend drop) on a basket the account holds.
-version: 1.3.0
+version: 1.3.1
 homepage: https://bskts.xyz/docs#agents
 metadata: {"openclaw":{"emoji":"🧺","requires":{"bins":["node"]},"homepage":"https://bskts.xyz/docs#agents"}}
 ---

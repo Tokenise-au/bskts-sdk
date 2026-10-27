@@ -355,6 +355,23 @@ describe("session transport and responses", () => {
         /reviewed basket/,
       );
   });
+  // 2026-10-27: the yield baskets (live since 2026-10-19) had no pins, so every
+  // delegated WAFER or COMET plan was refused (audit F2). Each pin still holds
+  // only its own ticker.
+  it.each([
+    ["WAFER", "0x574f64A5660F241B990791489b9Af66DA2A2DF54", "COMET"],
+    ["COMET", "0x0f2278E43c406151EeD198B29c082115DbF4791f", "WAFER"],
+  ])("accepts %s on its pinned vault, and only on it", (ticker, pinned, other) => {
+    const yieldPlan = (t: string, v: string) =>
+      schemas.agentTradePlan.safeParse({
+        ...response,
+        ticker: t,
+        action: { ...response.action, vault: v },
+      });
+    expect(yieldPlan(ticker, pinned).success).toBe(true);
+    expect(yieldPlan(other, pinned).success).toBe(false);
+    expect(yieldPlan(ticker, vault).success).toBe(false);
+  });
   it("accepts the grant's tighter slippage when the agent leaves it out", async () => {
     const tight = {
       ...response,

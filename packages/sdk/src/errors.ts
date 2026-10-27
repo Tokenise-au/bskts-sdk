@@ -9,6 +9,7 @@ export type ErrorCode =
   | "NO_ROUTE"
   | "NO_REFERENCE"
   | "ORDER_NOT_OPEN"
+  | "ORDER_AMBIGUOUS" // 2026-10-27: a cancel's id is open on more than one escrow; pass escrow
   | "INSUFFICIENT_SHARES"
   | "PAUSED"
   | "NOT_IMPLEMENTED"
