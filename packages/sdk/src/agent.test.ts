@@ -399,6 +399,43 @@ describe("session transport and responses", () => {
     await expect(c.buildAgentTrade(p)).rejects.toMatchObject({ code: "POLICY" });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  // 2026-10-27 (bskts agent audit F5): `detail.nav ?? 0` valued a sale at $0
+  // when the market had no NAV, so any maxUsdPerTrade passed.
+  it("refuses a delegated sale it cannot value against maxUsdPerTrade", async () => {
+    const shares = 10n ** 21n;
+    const sell = {
+      ...response,
+      action: { ...response.action, kind: 1, amount: shares.toString() },
+    };
+    const c = new BsktsClient({
+      policy: { maxUsdPerTrade: 1_000_000 },
+      fetch: async (u) =>
+        new Response(
+          JSON.stringify(
+            String(u).includes("/v1/agent/trade")
+              ? sell
+              : {
+                  ticker: "INDEX2",
+                  name: "",
+                  thesis: "",
+                  vault,
+                  rebalance: "",
+                  mgmtFeeBps: 50,
+                  targetWeights: {},
+                  nav: null,
+                  change24h: 0,
+                  buyCostBps: 30,
+                  group: "",
+                  risk: null,
+                  constituents: [],
+                },
+          ),
+        ),
+    });
+    await expect(
+      c.buildAgentTrade({ owner, key: agent.address, ticker: "INDEX2", side: "sell", shares }),
+    ).rejects.toMatchObject({ code: "POLICY", message: expect.stringContaining("no NAV") });
+  });
   it("validates the pinned domain and parses action amounts as bigints", () => {
     expect(plan().action.nonce).toBe(123n);
     expect(() =>

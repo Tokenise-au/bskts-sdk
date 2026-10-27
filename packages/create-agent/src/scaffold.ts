@@ -165,7 +165,7 @@ after success. Keep these files: deleting them removes the duplicate protection.
 An unresolved submission stops; restart to recheck it. An unused nonce at or
 before its deadline may still execute. Only after reconciliation should you
 use a new journal path for a deliberate new strategy trade.
-Guide: https://bskts.xyz/docs#agents · SDK: https://www.npmjs.com/package/@bskts/sdk
+Guide: https://bskts.xyz/docs/ai-agents · SDK: https://www.npmjs.com/package/@bskts/sdk
 
 \`.env\` holds your wallet address (\`BSKTS_OWNER\`) and the agent's key
 (\`AGENT_KEY\`). Keep it private; \`agent.mjs\` has nothing personal in it. To stop

@@ -120,6 +120,19 @@ export const exitOrderId = (logs: readonly Log[]) => idFrom(logs, SELL_ESCROW, e
 
 const signed = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
 const nav = (n: number) => `NAV ${Number(n.toPrecision(8))}`;
+/** 2026-10-27 (bskts agent audit F6): the API's worst* fields are a fill AT
+ * the trigger at the widest floor, not a bound: the escrows price the floor
+ * from the NAV when the order fills, so a stop after a gap down sells lower and
+ * a buy-above after a gap up pays more. "worst net" read as a promise the
+ * contracts do not make. The field names stay (they are the API's); the words
+ * printed around them say "at the trigger". The API's basis carries the gap
+ * caveat since bskts PR 256; these lines add it only when the basis lacks it. */
+const STOP_GAP =
+  "Not a bound: a stop fills at the NAV when it fills, so after a gap down it sells below its trigger and below these proceeds.";
+const ABOVE_GAP =
+  "Not a cap: a buy-above fills at the NAV when it fills, so after a gap up it pays more per share than this.";
+const hasGapNote = (basis: string) => /not a (bound|cap)/i.test(basis);
+
 /** 2026-10-25: the plan's preview as plain lines, so the MCP tool and the skill
  * print the same words around the API's numbers. Triggers are on NAV: each line
  * is a price move, with what reaches the account after costs beside it. */
@@ -129,10 +142,8 @@ export function describePreview(p: AgentOrderPreview): string[] {
   if (p.kind === "limit")
     return [
       `Limit buy when ${p.direction === "below" ? "NAV <=" : "NAV >="} ${Number(p.triggerNav.toPrecision(8))}: ${signed(p.fromNowPct)} from ${now}.`,
-      `Worst price per share at the trigger: ${Number(p.worstPricePerShare.toPrecision(8))} (${signed(p.worstFromNowPct)} from now; max slippage ${p.costs.maxSlippageBps} bps incl. the ${p.costs.mintFeeBps} bps mint fee, filler fee ${p.costs.fillerFeeBps} bps).`,
-      ...(p.direction === "above"
-        ? ["A buy-above fills at or over its trigger, so it can pay more than this."]
-        : []),
+      `Most per share at the trigger (widest floor): ${Number(p.worstPricePerShare.toPrecision(8))} (${signed(p.worstFromNowPct)} from now; max slippage ${p.costs.maxSlippageBps} bps incl. the ${p.costs.mintFeeBps} bps mint fee, filler fee ${p.costs.fillerFeeBps} bps).`,
+      ...(p.direction === "above" && !hasGapNote(p.basis) ? [ABOVE_GAP] : []),
       ...(p.fillsNow ? ["The trigger is already met: it can fill as soon as it is placed."] : []),
       p.basis,
     ];
@@ -143,15 +154,13 @@ export function describePreview(p: AgentOrderPreview): string[] {
         (t) =>
           `${t.edge === "stop" ? "Stop-loss" : "Take-profit"} at ${nav(t.nav)}: ${signed(t.fromNowPct)} from now` +
           (t.priceReturnPct === null
-            ? `; worst proceeds ${t.worstProceedsUsdg} USDG.`
-            : `; vs entry ${signed(t.priceReturnPct)} price, ${t.estNetReturnPct === null ? "n/a" : signed(t.estNetReturnPct)} est. net, ${t.worstNetReturnPct === null ? "n/a" : signed(t.worstNetReturnPct)} worst net (worst proceeds ${t.worstProceedsUsdg} USDG).`),
+            ? `; ${t.worstProceedsUsdg} USDG at the trigger's widest floor.`
+            : `; vs entry ${signed(t.priceReturnPct)} price, ${t.estNetReturnPct === null ? "n/a" : signed(t.estNetReturnPct)} est. net, ${t.worstNetReturnPct === null ? "n/a" : signed(t.worstNetReturnPct)} at the trigger's widest floor (${t.worstProceedsUsdg} USDG).`),
       ),
       ...(p.breakEvenNav === null
         ? []
         : [`Break-even after estimated costs: ${nav(p.breakEvenNav)}.`]),
-      ...(p.triggers.some((t) => t.edge === "stop")
-        ? ["A stop in a fast fall can fill below its trigger: the floor is priced when it fills."]
-        : []),
+      ...(p.triggers.some((t) => t.edge === "stop") && !hasGapNote(p.basis) ? [STOP_GAP] : []),
       p.basis,
     ];
   if (p.kind === "cancel")

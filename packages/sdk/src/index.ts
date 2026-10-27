@@ -8,7 +8,12 @@
  * The SDK never holds private keys or funds.
  */
 export { robinhood } from "viem/chains";
-export { BsktsClient, DEFAULT_API_URL } from "./client";
+export {
+  BsktsClient,
+  DEFAULT_API_URL,
+  DEFAULT_SLIPPAGE_BPS,
+  WALLET_ORDER_MAX_SLIPPAGE_BPS,
+} from "./client";
 export type { BsktsClientOptions, OrderArgs, SharesArg } from "./client";
 export { execute, viemSender } from "./execute";
 export type { ExecuteResult, Sender } from "./execute";

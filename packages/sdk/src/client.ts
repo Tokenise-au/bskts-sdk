@@ -46,6 +46,20 @@ export type OrderArgs =
     }
   | { kind: "cancel"; orderId: `0x${string}`; address?: Address; escrow?: Address };
 
+// 2026-10-27 (bskts agent audit F5): the host policy was checked against what
+// the CALLER passed, not what the plan would do. A buy or sale with no
+// slippageBps skipped a maxSlippageBps under the API's default of 50; a wallet
+// exit was never sized against maxUsdPerTrade, and neither wallet order type
+// was held to maxSlippageBps although its floor eases to 3%; and a delegated
+// sale with no market NAV was valued at $0, so any size cap passed. Defaults
+// are now resolved before the check, every order is checked on its effective
+// terms, and a size cap with nothing to value the trade against refuses.
+/** The API's slippage for /v1/tx/buy and /v1/tx/sell when none is passed. */
+export const DEFAULT_SLIPPAGE_BPS = 50;
+/** The widest floor a wallet limit buy or exit eases to while nobody can fill it
+ * (the API's EXIT_MAX_SLIPPAGE_BPS, fixed: /v1/tx/limit and /v1/tx/exit take no slippage). */
+export const WALLET_ORDER_MAX_SLIPPAGE_BPS = 300;
+
 /** Typed, non-custodial client for the bskts API. Reads return validated data;
  * build* methods return unsigned plans ({ approval, tx, simulation }) for your
  * wallet to sign, via execute(). */
@@ -179,10 +193,16 @@ export class BsktsClient {
   strategies(address: Address) {
     return this.#request(s.strategiesResponse, `/v1/strategies/${address}`);
   }
-  /** Every public job executable right now, with calldata and the fee it pays
-   * whoever sends it. Simulate before sending. */
-  jobs() {
-    return this.#request(s.jobsResponse, "/v1/jobs");
+  /** Public jobs executable right now, with calldata and the fee each pays
+   * whoever sends it, one page per kind: pass the response's `next` as
+   * `cursor` until it is null for a full pass. `complete: false` is not "no
+   * jobs" (more remain, or an index is unavailable: see `scan`). Simulate
+   * before sending. */
+  jobs(opts: { cursor?: string } = {}) {
+    return this.#request(
+      s.jobsResponse,
+      opts.cursor ? `/v1/jobs?cursor=${encodeURIComponent(opts.cursor)}` : "/v1/jobs",
+    );
   }
   /** Swap calls that turn `shares` of a basket into USDG through its pinned
    * pools: the `swaps` argument for liquidations and levered exits. */
@@ -209,6 +229,17 @@ export class BsktsClient {
   }
   /** Unsigned buy/sell Action for a delegated bskts account. Unlike buildBuy,
    * no wallet approval or ETH is needed: a host session signer + relayer execute it. */
+  /** A basket's NAV to size a trade against maxUsdPerTrade; refuses without one. */
+  async #navForCap(ticker: string) {
+    const { nav } = await this.basket(ticker);
+    if (nav == null || !(nav > 0))
+      throw new BsktsError(
+        `policy: no NAV for ${ticker.toUpperCase()} right now, so this trade cannot be checked against maxUsdPerTrade`,
+        "POLICY",
+      );
+    return nav;
+  }
+
   async buildAgentTrade(
     p: { owner: Address; key: Address; ticker: string; slippageBps?: number; feeUsdg?: bigint } & (
       | { side: "buy"; amountUsdg: number }
@@ -246,8 +277,8 @@ export class BsktsClient {
     // A fixed 50 rejected valid tight grants; check the effective value too.
     checkPolicy(this.policy, { slippageBps: plan.action.slippageBps });
     if (p.side === "sell" && this.policy.maxUsdPerTrade != null) {
-      const detail = await this.basket(p.ticker);
-      checkPolicy(this.policy, { usd: (Number(plan.action.amount) / 1e18) * (detail.nav ?? 0) });
+      const nav = await this.#navForCap(p.ticker);
+      checkPolicy(this.policy, { usd: (Number(plan.action.amount) / 1e18) * nav });
     }
     return plan;
   }
@@ -496,12 +527,14 @@ export class BsktsClient {
     slippageBps?: number;
     simulate?: boolean;
   }) {
-    checkPolicy(this.policy, { ticker: p.ticker, usd: p.amountUsdg, slippageBps: p.slippageBps });
+    // sent explicitly, so the slippage checked is the slippage the API uses
+    const slippageBps = p.slippageBps ?? DEFAULT_SLIPPAGE_BPS;
+    checkPolicy(this.policy, { ticker: p.ticker, usd: p.amountUsdg, slippageBps });
     if (this.policy.maxBuyCostBps != null) {
       const { buyCostBps } = await this.basket(p.ticker);
       checkPolicy(this.policy, { ticker: p.ticker, buyCostBps });
     }
-    return this.#request(s.buyPlan, "/v1/tx/buy", p);
+    return this.#request(s.buyPlan, "/v1/tx/buy", { ...p, slippageBps });
   }
   /** Sell shares for USDG in one transaction: exact shares (walletSharesWei
    * from positions()) or "max"; with "max", `fraction` (0-1] sells part.
@@ -514,10 +547,12 @@ export class BsktsClient {
     slippageBps?: number;
     simulate?: boolean;
   }) {
-    checkPolicy(this.policy, { ticker: p.ticker, slippageBps: p.slippageBps });
+    const slippageBps = p.slippageBps ?? DEFAULT_SLIPPAGE_BPS;
+    checkPolicy(this.policy, { ticker: p.ticker, slippageBps });
     const plan = await this.#request(s.sellPlan, "/v1/tx/sell", {
       ...p,
       shares: p.shares ?? "max",
+      slippageBps,
     });
     checkPolicy(this.policy, { usd: Number(plan.expectedUsdg) / 1e6 });
     return plan;
@@ -527,11 +562,16 @@ export class BsktsClient {
    * cancel. NAV levels in dollars. */
   async buildOrder(p: OrderArgs) {
     if (p.kind === "cancel") return this.#request(s.txPlan, "/v1/tx/cancel", p);
+    const slippageBps = WALLET_ORDER_MAX_SLIPPAGE_BPS;
     if (p.kind === "exit") {
-      checkPolicy(this.policy, { ticker: p.ticker });
+      checkPolicy(this.policy, { ticker: p.ticker, slippageBps });
+      if (this.policy.maxUsdPerTrade != null)
+        checkPolicy(this.policy, {
+          usd: (Number(p.shares) / 1e18) * (await this.#navForCap(p.ticker)),
+        });
       return this.#request(s.exitPlan, "/v1/tx/exit", p);
     }
-    checkPolicy(this.policy, { ticker: p.ticker, usd: p.amountUsdg });
+    checkPolicy(this.policy, { ticker: p.ticker, usd: p.amountUsdg, slippageBps });
     return this.#request(s.limitPlan, "/v1/tx/limit", p);
   }
   /** Redeem shares in kind: receive the underlying tokens instead of USDG. */

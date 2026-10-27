@@ -472,7 +472,7 @@ describe("delegated limit MCP", () => {
       expect(placed.action.kind).toBe(3);
       expect(placed.terms).toMatchObject({ kind: "exit", tpNavE18: "110000000000000000000" });
       expect(placed.previewText[1]).toBe(
-        "Take-profit at NAV 110: +10.00% from now; worst proceeds 109.1 USDG.",
+        "Take-profit at NAV 110: +10.00% from now; 109.1 USDG at the trigger's widest floor.",
       );
       expect(calls).toHaveLength(2);
       fixture.action.kind = 4;

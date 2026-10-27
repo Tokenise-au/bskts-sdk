@@ -259,10 +259,28 @@ export const job = z.object({
   /** send first if the fill misses its floor (starts the price auction) */
   armData: hex,
 });
+// 2026-10-27 (bskts agent audit F7): the API read only the oldest 25 open
+// orders per kind and turned an index error into an empty list. It now pages
+// each kind (?cursor=) and says whether the list is complete. Optional while
+// a deployment without them answers.
+const jobKindScan = z.object({
+  /** "unavailable": the index did not answer, so this kind's list is NOT complete */
+  index: z.enum(["ok", "unavailable", "not-configured"]),
+  offset: num,
+  scanned: num,
+  /** more open orders sit past this page: follow `next` */
+  more: z.boolean(),
+  error: z.string().optional(),
+});
 export const jobsResponse = z.object({
   asOf: z.string(),
   jobs: z.array(job),
   skipped: z.array(z.object({ type: z.string(), id: z.string(), reason: z.string() })),
+  /** every index answered and no kind has more past this page */
+  complete: z.boolean().optional(),
+  /** pass to jobs({ cursor }) for the next page; null at the end of a full pass */
+  next: z.string().nullable().optional(),
+  scan: z.object({ sell: jobKindScan, limit: jobKindScan, schedule: jobKindScan }).optional(),
   note: z.string(),
 });
 
@@ -363,9 +381,11 @@ const exitEdge = z.object({
   priceReturnPct: pct,
   /** less the basket's cost mark, the 0.20% sell fee and the filler fee */
   estNetReturnPct: pct,
-  /** less maxSlippageBps (which includes the sell fee) and the filler fee, at the trigger */
+  /** less maxSlippageBps (which includes the sell fee) and the filler fee, AT the trigger:
+   * not a bound, since a stop after a gap down fills lower */
   worstNetReturnPct: pct,
   estProceedsUsdg: numOrNull,
+  /** proceeds at the trigger at the widest floor: not a bound (see worstNetReturnPct) */
   worstProceedsUsdg: num,
 });
 const cancelEdge = z.object({ nav: num, fromNowPct: numOrNull }).nullable();
@@ -379,7 +399,8 @@ export const agentOrderPreview = z.discriminatedUnion("kind", [
     fromNowPct: num,
     /** the trigger is already met: it can fill as soon as it is placed */
     fillsNow: z.boolean(),
-    /** the most per share at the trigger: max slippage (mint fee included) and filler fee */
+    /** the most per share at the trigger: max slippage (mint fee included) and filler fee.
+     * A bound for a dip buy; a buy-above after a gap up pays more */
     worstPricePerShare: num,
     worstFromNowPct: num,
     worstShares: num,

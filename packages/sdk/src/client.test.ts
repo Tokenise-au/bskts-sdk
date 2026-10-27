@@ -90,6 +90,35 @@ describe("requests", () => {
   });
 });
 
+// 2026-10-27 (bskts agent audit F7): /v1/jobs pages each kind; the client passes
+// the cursor and keeps the completeness fields zod would otherwise drop.
+describe("jobs", () => {
+  it("passes the cursor and keeps complete, next and scan", async () => {
+    const urls: string[] = [];
+    const scan = { index: "ok", offset: 25, scanned: 5, more: false };
+    const c = new BsktsClient({
+      baseUrl: "https://x.test",
+      fetch: (u) => {
+        urls.push(String(u));
+        return reply({
+          asOf: "t",
+          jobs: [],
+          skipped: [],
+          complete: true,
+          next: null,
+          scan: { sell: scan, limit: scan, schedule: scan },
+          note: "",
+        });
+      },
+    });
+    const r = await c.jobs({ cursor: "sell:25,limit:0,schedule:0" });
+    expect(urls[0]).toBe("https://x.test/v1/jobs?cursor=sell%3A25%2Climit%3A0%2Cschedule%3A0");
+    expect([r.complete, r.next, r.scan?.sell.scanned]).toEqual([true, null, 5]);
+    await c.jobs();
+    expect(urls[1]).toBe("https://x.test/v1/jobs");
+  });
+});
+
 describe("policy", () => {
   const strict = new BsktsClient({
     fetch: never,
@@ -154,6 +183,72 @@ describe("policy", () => {
       allowedTickers: ["DIGI64", "MAG6"],
     });
     expect(() => policyFromEnv({ BSKTS_MAX_USD_PER_TRADE: "lots" })).toThrow();
+  });
+  // 2026-10-27 (bskts agent audit F5): each of these passed the policy before.
+  describe("checks effective terms, not only the caller's", () => {
+    const basketBody = (nav: number | null) => ({
+      ticker: "DIGI64",
+      name: "",
+      thesis: "",
+      vault: ADDR,
+      rebalance: "",
+      mgmtFeeBps: 50,
+      targetWeights: {},
+      nav,
+      change24h: 0,
+      buyCostBps: 30,
+      group: "",
+      risk: null,
+      constituents: [],
+    });
+    it("holds an omitted slippage to the cap at the API's default of 50", async () => {
+      const tight = new BsktsClient({ fetch: never, policy: { maxSlippageBps: 1 } });
+      for (const p of [
+        tight.buildBuy({ ticker: "DIGI64", amountUsdg: 5, address: ADDR }),
+        tight.buildSell({ ticker: "DIGI64", address: ADDR }),
+      ])
+        expect((await p.catch((x) => x)).code).toBe("POLICY");
+    });
+    it("sends the slippage it checked", async () => {
+      const bodies: Record<string, unknown>[] = [];
+      const c = new BsktsClient({
+        fetch: (_u, init) => {
+          bodies.push(JSON.parse(String(init?.body)));
+          return reply({});
+        },
+      });
+      await c.buildBuy({ ticker: "DIGI64", amountUsdg: 5, address: ADDR }).catch(() => undefined);
+      await c.buildSell({ ticker: "DIGI64", address: ADDR }).catch(() => undefined);
+      expect(bodies.map((b) => b["slippageBps"])).toEqual([50, 50]);
+    });
+    it("holds wallet orders to the cap at their 3% widest floor", async () => {
+      const c = new BsktsClient({ fetch: never, policy: { maxSlippageBps: 100 } });
+      for (const p of [
+        c.buildOrder({ kind: "limit", ticker: "DIGI64", amountUsdg: 5, address: ADDR }),
+        c.buildOrder({ kind: "exit", ticker: "DIGI64", address: ADDR, shares: 1n, stopNav: 1 }),
+      ])
+        expect((await p.catch((x) => x)).code).toBe("POLICY");
+    });
+    it("sizes a wallet exit's shares against maxUsdPerTrade", async () => {
+      const c = client(basketBody(1), 200, { maxUsdPerTrade: 1 });
+      const e = await c
+        .buildOrder({
+          kind: "exit",
+          ticker: "DIGI64",
+          address: ADDR,
+          shares: 1000n * 10n ** 18n,
+          stopNav: 0.9,
+        })
+        .catch((x) => x);
+      expect([e.code, e.message]).toEqual(["POLICY", expect.stringContaining("$1000.00")]);
+    });
+    it("refuses a size cap it cannot value, rather than valuing at $0", async () => {
+      const c = client(basketBody(null), 200, { maxUsdPerTrade: 1_000_000 });
+      const e = await c
+        .buildOrder({ kind: "exit", ticker: "DIGI64", address: ADDR, shares: 1n, stopNav: 1 })
+        .catch((x) => x);
+      expect([e.code, e.message]).toEqual(["POLICY", expect.stringContaining("no NAV")]);
+    });
   });
 });
 
