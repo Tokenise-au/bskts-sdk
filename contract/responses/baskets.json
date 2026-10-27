@@ -11,10 +11,11 @@
         "SPY": 0.6,
         "ETH": 0.4
       },
-      "nav": 99.27764,
-      "change24h": -0.0035752081,
-      "buyCostBps": 3.4231288,
+      "nav": 99.165003,
+      "change24h": 0.0030901647,
+      "buyCostBps": 3.4212102,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -33,10 +34,11 @@
         "META": 0.166667,
         "TSLA": 0.166667
       },
-      "nav": 104.61935,
-      "change24h": -0.0011963149,
-      "buyCostBps": 17.622029,
+      "nav": 105.82371,
+      "change24h": 0.010263261,
+      "buyCostBps": 17.639532,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -51,10 +53,11 @@
         "SPY": 0.5,
         "QQQ": 0.5
       },
-      "nav": 99.402203,
-      "change24h": -0.00016107191,
-      "buyCostBps": 5.2387873,
+      "nav": 100.50175,
+      "change24h": 0.0096522309,
+      "buyCostBps": 5.2457807,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -70,10 +73,11 @@
         "TSLA": 0.333333,
         "NVDA": 0.333333
       },
-      "nav": 103.61375,
-      "change24h": -0.0011861196,
-      "buyCostBps": 13.456307,
+      "nav": 106.71814,
+      "change24h": 0.023933155,
+      "buyCostBps": 13.510006,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -90,10 +94,11 @@
         "CRCL": 0.25,
         "ETH": 0.25
       },
-      "nav": 98.351582,
-      "change24h": -0.0028709647,
-      "buyCostBps": 21.857189,
+      "nav": 95.399108,
+      "change24h": -0.02118674,
+      "buyCostBps": 21.871475,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -109,10 +114,11 @@
         "MSFT": 0.3,
         "GOOGL": 0.2
       },
-      "nav": 97.98563,
-      "change24h": 0.0018390986,
-      "buyCostBps": 12.696732,
+      "nav": 99.422298,
+      "change24h": 0.014013676,
+      "buyCostBps": 12.696318,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -130,10 +136,11 @@
         "INTC": 0.15,
         "SNDK": 0.1
       },
-      "nav": 99.149917,
-      "change24h": -0.00032179509,
-      "buyCostBps": 73.463977,
+      "nav": 102.42281,
+      "change24h": 0.027298111,
+      "buyCostBps": 73.289874,
       "limitMinSlippageBps": 94,
+      "exitMinSlippageBps": 94,
       "group": "common",
       "risk": null
     },
@@ -149,10 +156,11 @@
         "SPCX": 0.3333,
         "QQQ": 0.3333
       },
-      "nav": 101.98726,
-      "change24h": -0.0023753217,
-      "buyCostBps": 13.811465,
+      "nav": 102.55501,
+      "change24h": 0.0033793694,
+      "buyCostBps": 13.805126,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -169,10 +177,11 @@
         "COIN": 0.25,
         "SPCX": 0.25
       },
-      "nav": 100.08084,
-      "change24h": -0.0030536502,
-      "buyCostBps": 22.897619,
+      "nav": 100.5316,
+      "change24h": 0.0048176644,
+      "buyCostBps": 22.937895,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -188,10 +197,11 @@
         "AMD": 0.3333,
         "TSM": 0.3333
       },
-      "nav": 101.89233,
-      "change24h": 0.0006185407,
-      "buyCostBps": 61.178875,
-      "limitMinSlippageBps": 82,
+      "nav": 104.31031,
+      "change24h": 0.02290612,
+      "buyCostBps": 60.815578,
+      "limitMinSlippageBps": 81,
+      "exitMinSlippageBps": 81,
       "group": "common",
       "risk": null
     },
@@ -207,10 +217,11 @@
         "COIN": 0.25,
         "CRCL": 0.25
       },
-      "nav": 91.814445,
-      "change24h": -0.004025057,
-      "buyCostBps": 15.830913,
+      "nav": 89.403362,
+      "change24h": -0.017307405,
+      "buyCostBps": 15.842588,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -227,10 +238,11 @@
         "ETH": 0.25,
         "cbBTC": 0.25
       },
-      "nav": 64.997541,
-      "change24h": -0.011100301,
-      "buyCostBps": 41.492627,
+      "nav": 65.234275,
+      "change24h": 0.0011569944,
+      "buyCostBps": 41.562313,
       "limitMinSlippageBps": 62,
+      "exitMinSlippageBps": 62,
       "group": "exotic",
       "risk": "Holds Robinhood Chain’s own native tokens rather than Stock Tokens. Two have no published price feed and are valued from their own liquidity pools, so expect thinner liquidity and wider spreads than a common basket."
     },
@@ -247,10 +259,11 @@
         "SLV": 0.15,
         "USO": 0.1
       },
-      "nav": 94.373441,
-      "change24h": -0.0020981407,
-      "buyCostBps": 17.903653,
+      "nav": 94.464482,
+      "change24h": 0.0026370132,
+      "buyCostBps": 17.927068,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -266,10 +279,11 @@
         "SGOV": 0.33,
         "GLD": 0.33
       },
-      "nav": 97.406418,
-      "change24h": -0.00020984618,
-      "buyCostBps": 5.0195311,
+      "nav": 97.878271,
+      "change24h": 0.0047561889,
+      "buyCostBps": 5.0646924,
       "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50,
       "group": "common",
       "risk": null
     },
@@ -285,10 +299,11 @@
         "MSTR": 0.3,
         "SPCX": 0.3
       },
-      "nav": 88.311612,
-      "change24h": -0.0025384474,
-      "buyCostBps": 27.801091,
-      "limitMinSlippageBps": 50,
+      "nav": 89.86537,
+      "change24h": 0.015210037,
+      "buyCostBps": 34.185161,
+      "limitMinSlippageBps": 55,
+      "exitMinSlippageBps": 55,
       "group": "exotic",
       "risk": "Holds NVDAx3L, a daily-reset 3x leveraged NVIDIA token issued by Lighter × Long. Its issuer can pause or upgrade it with a single key, and a pause would block every TURBO sell and redemption, including the MSTR and SPCX legs, until it is lifted. Leveraged tokens also lose value in choppy markets. Size positions accordingly."
     },
@@ -306,10 +321,11 @@
         "NVDA-LP": 0.15,
         "SNDK-LP": 0.1
       },
-      "nav": 98.095185,
-      "change24h": 0.000092965212,
+      "nav": 100.74165,
+      "change24h": 0.021785122,
       "buyCostBps": 49.125,
       "limitMinSlippageBps": 170,
+      "exitMinSlippageBps": 70,
       "group": "yield",
       "risk": "Each leg is a Beefy liquidity position, not the stock itself: roughly half stock and half USDG, it earns trading fees but trails simply holding the stock in a strong one-way move. Fee yields vary and come from small pools. Beefy can upgrade its contracts and tags most of these positions unaudited; if Beefy pauses one, selling for USDG waits, but redeeming the basket in kind always works."
     },
@@ -326,14 +342,15 @@
         "TSLA-LP": 0.25,
         "COIN-LP": 0.2
       },
-      "nav": 100.34279,
-      "change24h": -0.00029852761,
+      "nav": 100.18166,
+      "change24h": -0.0014917806,
       "buyCostBps": 26.35,
       "limitMinSlippageBps": 170,
+      "exitMinSlippageBps": 50,
       "group": "yield",
       "risk": "Each leg is a Beefy liquidity position, not the stock itself: roughly half stock and half USDG, it earns trading fees but trails simply holding the stock in a strong one-way move. Fee yields vary and come from small pools. Beefy can upgrade its contracts and tags most of these positions unaudited; if Beefy pauses one, selling for USDG waits, but redeeming the basket in kind always works."
     }
   ],
-  "asOfMs": 1792885362302,
+  "asOfMs": 1793059800557,
   "live": true
 }

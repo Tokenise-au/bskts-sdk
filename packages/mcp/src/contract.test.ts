@@ -46,12 +46,29 @@ describe("bskts_agent_order against AgentOrderRequest", () => {
       slippageBps: 300,
     },
     cancel: { kind: "cancel", owner: ADDR, key: ADDR, orderId: ORDER_ID },
+    // 2026-10-27: exits and their cancellation (API PR 236, MCP 0.5.0), which
+    // the vendored contract predated
+    exit: {
+      kind: "exit",
+      owner: ADDR,
+      key: ADDR,
+      ticker: "DIGI64",
+      shares: "max",
+      stopNav: 90,
+      tpNav: 110,
+      slippageBps: 300,
+    },
+    "cancel-exit": { kind: "cancel-exit", owner: ADDR, key: ADDR, orderId: ORDER_ID },
   };
   // where the tool (through the SDK) is deliberately stricter than the API, and why
   const stricter: Record<string, Record<string, string>> = {
     limit: {
       "amountUsdg at its maximum 9007199300":
         "the SDK caps at Number.MAX_SAFE_INTEGER / 1e6 (9007199254.74) so the base-unit amount is exact",
+    },
+    exit: {
+      "tpNav just above 0":
+        "under the base's stopNav 90: stop must be below take-profit, which the API also refuses (400) but its schema can't say across two fields",
     },
   };
   // API fields the tool does not take, and why

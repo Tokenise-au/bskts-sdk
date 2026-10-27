@@ -2,161 +2,178 @@
   "markets": [
     {
       "ticker": "DIGI64",
-      "nav": 99.27764,
-      "change24h": -0.0035752081,
-      "buyCostBps": 3.4231288,
-      "limitMinSlippageBps": 50
+      "nav": 99.165003,
+      "change24h": 0.0030901647,
+      "buyCostBps": 3.4212102,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "MAG6",
-      "nav": 104.61935,
-      "change24h": -0.0011963149,
-      "buyCostBps": 17.622029,
-      "limitMinSlippageBps": 50
+      "nav": 105.82371,
+      "change24h": 0.010263261,
+      "buyCostBps": 17.639532,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "INDEX2",
-      "nav": 99.402203,
-      "change24h": -0.00016107191,
-      "buyCostBps": 5.2387873,
-      "limitMinSlippageBps": 50
+      "nav": 100.50175,
+      "change24h": 0.0096522309,
+      "buyCostBps": 5.2457807,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "FRONTIER",
-      "nav": 103.61375,
-      "change24h": -0.0011861196,
-      "buyCostBps": 13.456307,
-      "limitMinSlippageBps": 50
+      "nav": 106.71814,
+      "change24h": 0.023933155,
+      "buyCostBps": 13.510006,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "CRYPTOEQ",
-      "nav": 98.351582,
-      "change24h": -0.0028709647,
-      "buyCostBps": 21.857189,
-      "limitMinSlippageBps": 50
+      "nav": 95.399108,
+      "change24h": -0.02118674,
+      "buyCostBps": 21.871475,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "OPUS",
-      "nav": 97.98563,
-      "change24h": 0.0018390986,
-      "buyCostBps": 12.696732,
-      "limitMinSlippageBps": 50
+      "nav": 99.422298,
+      "change24h": 0.014013676,
+      "buyCostBps": 12.696318,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "FABLE",
-      "nav": 99.149917,
-      "change24h": -0.00032179509,
-      "buyCostBps": 73.463977,
-      "limitMinSlippageBps": 94
+      "nav": 102.42281,
+      "change24h": 0.027298111,
+      "buyCostBps": 73.289874,
+      "limitMinSlippageBps": 94,
+      "exitMinSlippageBps": 94
     },
     {
       "ticker": "ORBIT",
-      "nav": 101.98726,
-      "change24h": -0.0023753217,
-      "buyCostBps": 13.811465,
-      "limitMinSlippageBps": 50
+      "nav": 102.55501,
+      "change24h": 0.0033793694,
+      "buyCostBps": 13.805126,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "MAXBETA",
-      "nav": 100.08084,
-      "change24h": -0.0030536502,
-      "buyCostBps": 22.897619,
-      "limitMinSlippageBps": 50
+      "nav": 100.5316,
+      "change24h": 0.0048176644,
+      "buyCostBps": 22.937895,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "SILICON",
-      "nav": 101.89233,
-      "change24h": 0.0006185407,
-      "buyCostBps": 61.178875,
-      "limitMinSlippageBps": 82
+      "nav": 104.31031,
+      "change24h": 0.02290612,
+      "buyCostBps": 60.815578,
+      "limitMinSlippageBps": 81,
+      "exitMinSlippageBps": 81
     },
     {
       "ticker": "ETHSTACK",
-      "nav": 91.814445,
-      "change24h": -0.004025057,
-      "buyCostBps": 15.830913,
-      "limitMinSlippageBps": 50
+      "nav": 89.403362,
+      "change24h": -0.017307405,
+      "buyCostBps": 15.842588,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "NATIVE",
-      "nav": 64.997541,
-      "change24h": -0.011100301,
-      "buyCostBps": 41.492627,
-      "limitMinSlippageBps": 62
+      "nav": 65.234275,
+      "change24h": 0.0011569944,
+      "buyCostBps": 41.562313,
+      "limitMinSlippageBps": 62,
+      "exitMinSlippageBps": 62
     },
     {
       "ticker": "HARD",
-      "nav": 94.373441,
-      "change24h": -0.0020981407,
-      "buyCostBps": 17.903653,
-      "limitMinSlippageBps": 50
+      "nav": 94.464482,
+      "change24h": 0.0026370132,
+      "buyCostBps": 17.927068,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "BEDROCK",
-      "nav": 97.406418,
-      "change24h": -0.00020984618,
-      "buyCostBps": 5.0195311,
-      "limitMinSlippageBps": 50
+      "nav": 97.878271,
+      "change24h": 0.0047561889,
+      "buyCostBps": 5.0646924,
+      "limitMinSlippageBps": 50,
+      "exitMinSlippageBps": 50
     },
     {
       "ticker": "TURBO",
-      "nav": 88.311612,
-      "change24h": -0.0025384474,
-      "buyCostBps": 27.801091,
-      "limitMinSlippageBps": 50
+      "nav": 89.86537,
+      "change24h": 0.015210037,
+      "buyCostBps": 34.185161,
+      "limitMinSlippageBps": 55,
+      "exitMinSlippageBps": 55
     },
     {
       "ticker": "WAFER",
-      "nav": 98.095185,
-      "change24h": 0.000092965212,
+      "nav": 100.74165,
+      "change24h": 0.021785122,
       "buyCostBps": 49.125,
-      "limitMinSlippageBps": 170
+      "limitMinSlippageBps": 170,
+      "exitMinSlippageBps": 70
     },
     {
       "ticker": "COMET",
-      "nav": 100.34279,
-      "change24h": -0.00029852761,
+      "nav": 100.18166,
+      "change24h": -0.0014917806,
       "buyCostBps": 26.35,
-      "limitMinSlippageBps": 170
+      "limitMinSlippageBps": 170,
+      "exitMinSlippageBps": 50
     }
   ],
   "prices": {
-    "SNDK-LP": 1335.4639,
-    "TSLA-LP": 1136782900000,
-    "MSFT": 522.82911,
-    "SPCX-LP": 1046269200000,
-    "MU-LP": 937.31982,
-    "CRCL-LP": 86.853123,
-    "COIN-LP": 197.74654,
-    "NVDAx3L": 0.92262436,
-    "AMD-LP": 495.57189,
-    "INTC-LP": 89.989885,
-    "NVDA-LP": 229.97077,
-    "NVDA": 212.38826,
-    "CRCL": 85.14639,
-    "GLD": 365.50805,
-    "COIN": 164.38952,
-    "SLV": 48.28091,
-    "AMD": 516.73768,
-    "INTC": 86.416999,
-    "QQQ": 704.58275,
-    "AAPL": 347.1975,
-    "SGOV": 101.26568,
-    "MSTR": 144.66246,
-    "SPY": 762.39064,
-    "TSLA": 370.43619,
-    "SNDK": 1222.8739,
-    "TSM": 418.68122,
-    "MU": 882.7613,
-    "cbBTC": 80823.242,
-    "USO": 169.02985,
-    "SPCX": 146.96493,
-    "ETH": 2354.2186,
-    "PONS": 0.23296532,
-    "UP": 0.15853679,
-    "META": 639.94622,
-    "GOOGL": 321.05162
+    "SPCX-LP": 1050194800000,
+    "COIN-LP": 194.27999,
+    "TSLA-LP": 1166843500000,
+    "MSFT": 531.7196,
+    "SNDK-LP": 1380.7023,
+    "INTC-LP": 93.725548,
+    "CRCL-LP": 84.748791,
+    "NVDA-LP": 233.4001,
+    "NVDA": 217.05306,
+    "NVDAx3L": 0.98254116,
+    "MU-LP": 960.94207,
+    "AMD-LP": 506.90127,
+    "TSLA": 392.70035,
+    "SGOV": 101.39843,
+    "AMD": 532.71271,
+    "COIN": 160.58148,
+    "SPY": 767.55485,
+    "MU": 915.5124,
+    "INTC": 91.007181,
+    "SNDK": 1267.0373,
+    "AAPL": 343.76782,
+    "SLV": 48.745243,
+    "TSM": 426.02118,
+    "GLD": 367.89876,
+    "QQQ": 715.45365,
+    "CRCL": 80.272286,
+    "MSTR": 140.72462,
+    "USO": 166.14123,
+    "SPCX": 148.05596,
+    "ETH": 2323.2729,
+    "PONS": 0.24551862,
+    "UP": 0.16024131,
+    "cbBTC": 80360.753,
+    "META": 632.80747,
+    "GOOGL": 318.37109
   },
-  "asOfMs": 1792885362302,
+  "asOfMs": 1793059800557,
   "live": true
 }
