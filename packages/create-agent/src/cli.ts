@@ -84,7 +84,7 @@ Next:
 
 It prints the agent's address and a link to approve it in bskts, waits while
 you approve, then dry runs a $6 buy of INDEX2: nothing is sent until you run
-"${pm} run live". Guide: https://bskts.xyz/docs#agents
+"${pm} run live". Guide: https://bskts.xyz/docs/ai-agents
 `);
 }
 

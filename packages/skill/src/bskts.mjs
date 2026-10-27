@@ -38,7 +38,7 @@ const RPC = "https://bskts.xyz/rpc";
 // Bump it with any change under skills/ and tag main skill-v<version>.
 // 2026-10-27: then, once it's on main, AGENT_SKILL_LATEST in the bskts repo
 // (src/lib/agent-skill.ts): installed copies compare themselves with it.
-const SKILL_VERSION = "1.3.1";
+const SKILL_VERSION = "1.3.2";
 
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version, and \`update\` if a newer one is out

@@ -36,5 +36,5 @@ Options:
 `npm create @bskts/agent my-folder -- --owner 0x… --no-install --no-start`.
 
 The agent trades from your bskts account within the daily turnover, slippage and expiry you
-approve; only your wallet can change them. Guide: https://bskts.xyz/docs#agents ·
+approve; only your wallet can change them. Guide: https://bskts.xyz/docs/ai-agents ·
 SDK: [`@bskts/sdk`](https://www.npmjs.com/package/@bskts/sdk).

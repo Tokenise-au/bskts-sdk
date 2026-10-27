@@ -4,13 +4,15 @@ import { BsktsError } from "./errors";
  * trading real funds: a hallucinated "buy $10,000" stops here. The chain's own
  * floors (minShares / minOut) still protect every trade regardless. */
 export interface Policy {
-  /** largest buy, limit buy or sale, in USD */
+  /** largest buy, limit buy, sale or exit, in USD (sales and exits at NAV; with
+   * no NAV to value one, it is refused) */
   maxUsdPerTrade?: number;
   /** only these tickers may be traded (case-insensitive) */
   allowedTickers?: readonly string[];
   /** refuse a buy whose live buyCostBps is above this */
   maxBuyCostBps?: number;
-  /** cap on the slippageBps passed to buy / sell */
+  /** cap on a trade's effective slippage: an omitted one counts as the API's
+   * default (50), a wallet limit or exit as its fixed 3% widest floor */
   maxSlippageBps?: number;
 }
 

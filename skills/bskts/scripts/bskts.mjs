@@ -27523,8 +27523,10 @@ var dist_exports = /* @__PURE__ */ __exportAll$1({
 	BsktsError: () => BsktsError,
 	COVER_ACTION_TYPES: () => COVER_ACTION_TYPES,
 	DEFAULT_API_URL: () => DEFAULT_API_URL,
+	DEFAULT_SLIPPAGE_BPS: () => 50,
 	SESSION_ACTION_TYPES: () => SESSION_ACTION_TYPES,
 	USDG: () => USDG,
+	WALLET_ORDER_MAX_SLIPPAGE_BPS: () => 300,
 	agentTypedData: () => agentTypedData,
 	checkCoverPlan: () => checkCoverPlan,
 	checkPolicy: () => checkPolicy,
@@ -27638,6 +27640,16 @@ const limitOrderId = (logs) => idFrom(logs, LIMIT_ESCROW, createdAbi);
 const exitOrderId = (logs) => idFrom(logs, SELL_ESCROW, exitCreatedAbi);
 const signed = (n) => `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
 const nav = (n) => `NAV ${Number(n.toPrecision(8))}`;
+/** 2026-10-27 (bskts agent audit F6): the API's worst* fields are a fill AT
+* the trigger at the widest floor, not a bound: the escrows price the floor
+* from the NAV when the order fills, so a stop after a gap down sells lower and
+* a buy-above after a gap up pays more. "worst net" read as a promise the
+* contracts do not make. The field names stay (they are the API's); the words
+* printed around them say "at the trigger". The API's basis carries the gap
+* caveat since bskts PR 256; these lines add it only when the basis lacks it. */
+const STOP_GAP = "Not a bound: a stop fills at the NAV when it fills, so after a gap down it sells below its trigger and below these proceeds.";
+const ABOVE_GAP = "Not a cap: a buy-above fills at the NAV when it fills, so after a gap up it pays more per share than this.";
+const hasGapNote = (basis) => /not a (bound|cap)/i.test(basis);
 /** 2026-10-25: the plan's preview as plain lines, so the MCP tool and the skill
 * print the same words around the API's numbers. Triggers are on NAV: each line
 * is a price move, with what reaches the account after costs beside it. */
@@ -27645,16 +27657,16 @@ function describePreview(p) {
 	const now = p.navNow === null ? "NAV now unavailable" : `${nav(p.navNow)} now (10-minute pool average)`;
 	if (p.kind === "limit") return [
 		`Limit buy when ${p.direction === "below" ? "NAV <=" : "NAV >="} ${Number(p.triggerNav.toPrecision(8))}: ${signed(p.fromNowPct)} from ${now}.`,
-		`Worst price per share at the trigger: ${Number(p.worstPricePerShare.toPrecision(8))} (${signed(p.worstFromNowPct)} from now; max slippage ${p.costs.maxSlippageBps} bps incl. the ${p.costs.mintFeeBps} bps mint fee, filler fee ${p.costs.fillerFeeBps} bps).`,
-		...p.direction === "above" ? ["A buy-above fills at or over its trigger, so it can pay more than this."] : [],
+		`Most per share at the trigger (widest floor): ${Number(p.worstPricePerShare.toPrecision(8))} (${signed(p.worstFromNowPct)} from now; max slippage ${p.costs.maxSlippageBps} bps incl. the ${p.costs.mintFeeBps} bps mint fee, filler fee ${p.costs.fillerFeeBps} bps).`,
+		...p.direction === "above" && !hasGapNote(p.basis) ? [ABOVE_GAP] : [],
 		...p.fillsNow ? ["The trigger is already met: it can fill as soon as it is placed."] : [],
 		p.basis
 	];
 	if (p.kind === "exit") return [
 		`Exit ${Number(p.shares.toPrecision(8))} shares; ${now}${p.avgEntry === null ? "; no entry history" : `; average entry ${nav(p.avgEntry)}`}.`,
-		...p.triggers.map((t) => `${t.edge === "stop" ? "Stop-loss" : "Take-profit"} at ${nav(t.nav)}: ${signed(t.fromNowPct)} from now` + (t.priceReturnPct === null ? `; worst proceeds ${t.worstProceedsUsdg} USDG.` : `; vs entry ${signed(t.priceReturnPct)} price, ${t.estNetReturnPct === null ? "n/a" : signed(t.estNetReturnPct)} est. net, ${t.worstNetReturnPct === null ? "n/a" : signed(t.worstNetReturnPct)} worst net (worst proceeds ${t.worstProceedsUsdg} USDG).`)),
+		...p.triggers.map((t) => `${t.edge === "stop" ? "Stop-loss" : "Take-profit"} at ${nav(t.nav)}: ${signed(t.fromNowPct)} from now` + (t.priceReturnPct === null ? `; ${t.worstProceedsUsdg} USDG at the trigger's widest floor.` : `; vs entry ${signed(t.priceReturnPct)} price, ${t.estNetReturnPct === null ? "n/a" : signed(t.estNetReturnPct)} est. net, ${t.worstNetReturnPct === null ? "n/a" : signed(t.worstNetReturnPct)} at the trigger's widest floor (${t.worstProceedsUsdg} USDG).`)),
 		...p.breakEvenNav === null ? [] : [`Break-even after estimated costs: ${nav(p.breakEvenNav)}.`],
-		...p.triggers.some((t) => t.edge === "stop") ? ["A stop in a fast fall can fill below its trigger: the floor is priced when it fills."] : [],
+		...p.triggers.some((t) => t.edge === "stop") && !hasGapNote(p.basis) ? [STOP_GAP] : [],
 		p.basis
 	];
 	if (p.kind === "cancel") return [`Cancel a limit buy at NAV ${p.direction === "below" ? "<=" : ">="} ${Number(p.triggerNav.toPrecision(8))}${p.fromNowPct === null ? "" : ` (${signed(p.fromNowPct)} from now)`}; ${p.refundUsdg} USDG returns to the account.`];
@@ -28077,6 +28089,19 @@ const job = object({
 	/** send first if the fill misses its floor (starts the price auction) */
 	armData: hex
 });
+const jobKindScan = object({
+	/** "unavailable": the index did not answer, so this kind's list is NOT complete */
+	index: _enum([
+		"ok",
+		"unavailable",
+		"not-configured"
+	]),
+	offset: num,
+	scanned: num,
+	/** more open orders sit past this page: follow `next` */
+	more: boolean(),
+	error: string().optional()
+});
 const jobsResponse = object({
 	asOf: string(),
 	jobs: array(job),
@@ -28085,6 +28110,15 @@ const jobsResponse = object({
 		id: string(),
 		reason: string()
 	})),
+	/** every index answered and no kind has more past this page */
+	complete: boolean().optional(),
+	/** pass to jobs({ cursor }) for the next page; null at the end of a full pass */
+	next: string().nullable().optional(),
+	scan: object({
+		sell: jobKindScan,
+		limit: jobKindScan,
+		schedule: jobKindScan
+	}).optional(),
 	note: string()
 });
 const apiErrorBody = object({
@@ -28144,9 +28178,11 @@ const exitEdge = object({
 	priceReturnPct: pct,
 	/** less the basket's cost mark, the 0.20% sell fee and the filler fee */
 	estNetReturnPct: pct,
-	/** less maxSlippageBps (which includes the sell fee) and the filler fee, at the trigger */
+	/** less maxSlippageBps (which includes the sell fee) and the filler fee, AT the trigger:
+	* not a bound, since a stop after a gap down fills lower */
 	worstNetReturnPct: pct,
 	estProceedsUsdg: numOrNull,
+	/** proceeds at the trigger at the widest floor: not a bound (see worstNetReturnPct) */
 	worstProceedsUsdg: num
 });
 const cancelEdge = object({
@@ -28163,7 +28199,8 @@ const agentOrderPreview = discriminatedUnion("kind", [
 		fromNowPct: num,
 		/** the trigger is already met: it can fill as soon as it is placed */
 		fillsNow: boolean(),
-		/** the most per share at the trigger: max slippage (mint fee included) and filler fee */
+		/** the most per share at the trigger: max slippage (mint fee included) and filler fee.
+		* A bound for a dip buy; a buy-above after a gap up pays more */
 		worstPricePerShare: num,
 		worstFromNowPct: num,
 		worstShares: num,
@@ -28926,6 +28963,11 @@ function executeCoverOnce(options) {
 	});
 }
 const DEFAULT_API_URL = "https://api.bskts.xyz";
+/** The API's slippage for /v1/tx/buy and /v1/tx/sell when none is passed. */
+const DEFAULT_SLIPPAGE_BPS = 50;
+/** The widest floor a wallet limit buy or exit eases to while nobody can fill it
+* (the API's EXIT_MAX_SLIPPAGE_BPS, fixed: /v1/tx/limit and /v1/tx/exit take no slippage). */
+const WALLET_ORDER_MAX_SLIPPAGE_BPS = 300;
 /** Typed, non-custodial client for the bskts API. Reads return validated data;
 * build* methods return unsigned plans ({ approval, tx, simulation }) for your
 * wallet to sign, via execute(). */
@@ -29040,10 +29082,13 @@ var BsktsClient = class {
 	strategies(address) {
 		return this.#request(strategiesResponse, `/v1/strategies/${address}`);
 	}
-	/** Every public job executable right now, with calldata and the fee it pays
-	* whoever sends it. Simulate before sending. */
-	jobs() {
-		return this.#request(jobsResponse, "/v1/jobs");
+	/** Public jobs executable right now, with calldata and the fee each pays
+	* whoever sends it, one page per kind: pass the response's `next` as
+	* `cursor` until it is null for a full pass. `complete: false` is not "no
+	* jobs" (more remain, or an index is unavailable: see `scan`). Simulate
+	* before sending. */
+	jobs(opts = {}) {
+		return this.#request(jobsResponse, opts.cursor ? `/v1/jobs?cursor=${encodeURIComponent(opts.cursor)}` : "/v1/jobs");
 	}
 	/** Swap calls that turn `shares` of a basket into USDG through its pinned
 	* pools: the `swaps` argument for liquidations and levered exits. */
@@ -29062,6 +29107,12 @@ var BsktsClient = class {
 	}
 	/** Unsigned buy/sell Action for a delegated bskts account. Unlike buildBuy,
 	* no wallet approval or ETH is needed: a host session signer + relayer execute it. */
+	/** A basket's NAV to size a trade against maxUsdPerTrade; refuses without one. */
+	async #navForCap(ticker) {
+		const { nav } = await this.basket(ticker);
+		if (nav == null || !(nav > 0)) throw new BsktsError(`policy: no NAV for ${ticker.toUpperCase()} right now, so this trade cannot be checked against maxUsdPerTrade`, "POLICY");
+		return nav;
+	}
 	async buildAgentTrade(p) {
 		checkPolicy(this.policy, {
 			ticker: p.ticker,
@@ -29080,8 +29131,8 @@ var BsktsClient = class {
 		if (!same(plan.status.owner, p.owner) || !same(plan.action.key, p.key) || !same(plan.status.key, p.key) || !same(plan.action.account, plan.status.account) || plan.ticker.toUpperCase() !== p.ticker.toUpperCase() || plan.action.kind !== (p.side === "buy" ? 0 : 1) || plan.action.slippageBps !== (p.slippageBps ?? Math.min(50, plan.status.maxSlippageBps)) || plan.action.fee !== (p.feeUsdg ?? 0n) || (p.side === "buy" ? plan.action.limit > BigInt(Math.floor(p.amountUsdg * 1e6)) : plan.action.amount !== p.shares)) throw new BsktsError("Agent plan does not match the requested trade.", "BAD_RESPONSE");
 		checkPolicy(this.policy, { slippageBps: plan.action.slippageBps });
 		if (p.side === "sell" && this.policy.maxUsdPerTrade != null) {
-			const detail = await this.basket(p.ticker);
-			checkPolicy(this.policy, { usd: Number(plan.action.amount) / 0xde0b6b3a7640000 * (detail.nav ?? 0) });
+			const nav = await this.#navForCap(p.ticker);
+			checkPolicy(this.policy, { usd: Number(plan.action.amount) / 0xde0b6b3a7640000 * nav });
 		}
 		return plan;
 	}
@@ -29168,10 +29219,11 @@ var BsktsClient = class {
 	/** Buy a basket with `amountUsdg` dollars of USDG, in one transaction.
 	* 422 NO_ROUTE rather than a partial buy. */
 	async buildBuy(p) {
+		const slippageBps = p.slippageBps ?? 50;
 		checkPolicy(this.policy, {
 			ticker: p.ticker,
 			usd: p.amountUsdg,
-			slippageBps: p.slippageBps
+			slippageBps
 		});
 		if (this.policy.maxBuyCostBps != null) {
 			const { buyCostBps } = await this.basket(p.ticker);
@@ -29180,19 +29232,24 @@ var BsktsClient = class {
 				buyCostBps
 			});
 		}
-		return this.#request(buyPlan, "/v1/tx/buy", p);
+		return this.#request(buyPlan, "/v1/tx/buy", {
+			...p,
+			slippageBps
+		});
 	}
 	/** Sell shares for USDG in one transaction: exact shares (walletSharesWei
 	* from positions()) or "max"; with "max", `fraction` (0-1] sells part.
 	* 422 NO_ROUTE rather than a partial sale. */
 	async buildSell(p) {
+		const slippageBps = p.slippageBps ?? 50;
 		checkPolicy(this.policy, {
 			ticker: p.ticker,
-			slippageBps: p.slippageBps
+			slippageBps
 		});
 		const plan = await this.#request(sellPlan, "/v1/tx/sell", {
 			...p,
-			shares: p.shares ?? "max"
+			shares: p.shares ?? "max",
+			slippageBps
 		});
 		checkPolicy(this.policy, { usd: Number(plan.expectedUsdg) / 1e6 });
 		return plan;
@@ -29202,13 +29259,19 @@ var BsktsClient = class {
 	* cancel. NAV levels in dollars. */
 	async buildOrder(p) {
 		if (p.kind === "cancel") return this.#request(txPlan, "/v1/tx/cancel", p);
+		const slippageBps = 300;
 		if (p.kind === "exit") {
-			checkPolicy(this.policy, { ticker: p.ticker });
+			checkPolicy(this.policy, {
+				ticker: p.ticker,
+				slippageBps
+			});
+			if (this.policy.maxUsdPerTrade != null) checkPolicy(this.policy, { usd: Number(p.shares) / 0xde0b6b3a7640000 * await this.#navForCap(p.ticker) });
 			return this.#request(exitPlan, "/v1/tx/exit", p);
 		}
 		checkPolicy(this.policy, {
 			ticker: p.ticker,
-			usd: p.amountUsdg
+			usd: p.amountUsdg,
+			slippageBps
 		});
 		return this.#request(limitPlan, "/v1/tx/limit", p);
 	}
@@ -29548,7 +29611,7 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.3.1";
+const SKILL_VERSION = "1.3.2";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version, and \`update\` if a newer one is out
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
