@@ -263,6 +263,7 @@ describe("policy", () => {
       const KEY = "0x000000000000000000000000000000000000bEEF" as const;
       for (const p of [
         c.buildBuy({ ticker: "DIGI64", amountUsdg: 5, address: ADDR }),
+        c.buildOrder({ kind: "limit", ticker: "DIGI64", amountUsdg: 5, address: ADDR }),
         c.buildAgentTrade({ owner: ADDR, key: KEY, ticker: "DIGI64", side: "buy", amountUsdg: 5 }),
         c.buildAgentOrder({
           owner: ADDR,
@@ -282,6 +283,62 @@ describe("policy", () => {
       expect(() => checkPolicy({ maxUsdPerTrade: 10 }, { buyCostBps: null })).not.toThrow();
       expect(() => checkPolicy({ maxBuyCostBps: 10 }, {})).not.toThrow();
     });
+    it.each([
+      { cost: null, cap: 30, refused: true },
+      { cost: 31, cap: 30, refused: true },
+      { cost: 30, cap: 30, refused: false },
+      { cost: 29, cap: 30, refused: false },
+      { cost: 0, cap: 0, refused: false },
+      { cost: null, cap: undefined, refused: false },
+    ])(
+      "checks wallet limit cost $cost against cap $cap before building",
+      async ({ cost, cap, refused }) => {
+        const paths: string[] = [];
+        const c = new BsktsClient({
+          policy: { maxBuyCostBps: cap },
+          fetch: (u) => {
+            const path = new URL(String(u)).pathname;
+            paths.push(path);
+            return reply(
+              path.startsWith("/v1/baskets/")
+                ? basketBody(1, cost)
+                : { ...plan(), tx: { to: ADDR, data: "0x", value: "0" }, note: "limit" },
+            );
+          },
+        });
+        const request = c.buildOrder({
+          kind: "limit",
+          ticker: "DIGI64",
+          address: ADDR,
+          amountUsdg: 5,
+        });
+        if (refused) await expect(request).rejects.toMatchObject({ code: "POLICY" });
+        else await expect(request).resolves.toMatchObject({ note: "limit" });
+        expect(paths).toEqual([
+          ...(cap === undefined ? [] : ["/v1/baskets/DIGI64"]),
+          ...(refused ? [] : ["/v1/tx/limit"]),
+        ]);
+      },
+    );
+    it.each(["exit", "cancel"] as const)(
+      "does not fetch buy cost for a wallet %s",
+      async (kind) => {
+        const paths: string[] = [];
+        const c = new BsktsClient({
+          policy: { maxBuyCostBps: 0 },
+          fetch: (u) => {
+            paths.push(new URL(String(u)).pathname);
+            return reply({ ...plan(), tx: { to: ADDR, data: "0x", value: "0" }, kind: "stop" });
+          },
+        });
+        await c.buildOrder(
+          kind === "exit"
+            ? { kind, ticker: "DIGI64", address: ADDR, shares: 1n, stopNav: 1 }
+            : { kind, address: ADDR, orderId: "0x01" },
+        );
+        expect(paths).toEqual([`/v1/tx/${kind}`]);
+      },
+    );
     it("holds a redeem to allowedTickers", async () => {
       const c = new BsktsClient({ fetch: never, policy: { allowedTickers: ["DIGI64"] } });
       const e = await c.buildRedeem({ ticker: "MAG6", address: ADDR, shares: 1n }).catch((x) => x);

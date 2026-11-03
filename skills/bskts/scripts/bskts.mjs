@@ -29276,6 +29276,10 @@ var BsktsClient = class {
 			usd: p.amountUsdg,
 			slippageBps
 		});
+		if (this.policy.maxBuyCostBps != null) checkPolicy(this.policy, {
+			ticker: p.ticker,
+			buyCostBps: (await this.basket(p.ticker)).buyCostBps
+		});
 		return this.#request(limitPlan, "/v1/tx/limit", p);
 	}
 	/** Redeem shares in kind: receive the underlying tokens instead of USDG. */

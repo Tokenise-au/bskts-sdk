@@ -572,6 +572,12 @@ export class BsktsClient {
       return this.#request(s.exitPlan, "/v1/tx/exit", p);
     }
     checkPolicy(this.policy, { ticker: p.ticker, usd: p.amountUsdg, slippageBps });
+    // 2026-11-03: wallet limits skipped the buy-cost cap enforced on delegated limits.
+    if (this.policy.maxBuyCostBps != null)
+      checkPolicy(this.policy, {
+        ticker: p.ticker,
+        buyCostBps: (await this.basket(p.ticker)).buyCostBps,
+      });
     return this.#request(s.limitPlan, "/v1/tx/limit", p);
   }
   /** Redeem shares in kind: receive the underlying tokens instead of USDG. */

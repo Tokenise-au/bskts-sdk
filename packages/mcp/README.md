@@ -66,6 +66,8 @@ The user's own guard rails, checked before anything is built (environment variab
 | `BSKTS_MAX_SLIPPAGE_BPS`  | cap on the slippage an agent may ask for                  |
 | `BSKTS_API_URL`           | a different API (default `https://api.bskts.xyz`)         |
 
+The buy-cost cap applies to market and limit buys through both wallet and delegated tools. A limit's current buy cost is checked when placing the order; its on-chain slippage floor governs the later fill. Sells, exits and cancellations do not require a buy-cost estimate.
+
 MIT
 
 ## Autonomous account path

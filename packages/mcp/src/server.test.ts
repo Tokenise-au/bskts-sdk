@@ -142,6 +142,38 @@ describe("bskts MCP server", () => {
     expect(calls).toEqual([]);
   });
 
+  // 2026-11-03: wallet limit tools skipped the buy-cost cap on both unknown and high costs.
+  it.each([null, 51])("refuses wallet limit buy cost %s before building", async (buyCostBps) => {
+    const { client, calls } = api(
+      {
+        "/v1/baskets/DIGI64": {
+          ticker: "DIGI64",
+          name: "",
+          thesis: "",
+          vault: ADDR,
+          rebalance: "",
+          mgmtFeeBps: 50,
+          targetWeights: {},
+          nav: 1,
+          change24h: 0,
+          buyCostBps,
+          group: "",
+          risk: null,
+          constituents: [],
+        },
+      },
+      { maxBuyCostBps: 50 },
+    );
+    const mcp = await connect(client);
+    const r = await mcp.callTool({
+      name: "bskts_order",
+      arguments: { kind: "limit", ticker: "DIGI64", amountUsdg: 5, address: ADDR },
+    });
+    expect(r.isError).toBe(true);
+    expect(text(r)).toMatchObject({ code: "POLICY" });
+    expect(calls).toEqual([{ path: "/v1/baskets/DIGI64", body: undefined }]);
+  });
+
   // 2026-10-27: every escrow numbers orders from 1, so a cancel without escrow
   // could withdraw the wrong order; the API now refuses it as ORDER_AMBIGUOUS
   // (audit F3) and the tool must let the caller name the escrow.
