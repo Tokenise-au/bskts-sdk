@@ -9,7 +9,7 @@ export interface Policy {
   maxUsdPerTrade?: number;
   /** only these tickers may be traded (case-insensitive) */
   allowedTickers?: readonly string[];
-  /** refuse a buy whose live buyCostBps is above this */
+  /** refuse a buy whose live buyCostBps is above this (or unknown) */
   maxBuyCostBps?: number;
   /** cap on a trade's effective slippage: an omitted one counts as the API's
    * default (50), a wallet limit or exit as its fixed 3% widest floor */
@@ -33,6 +33,13 @@ export function checkPolicy(
     p.slippageBps > policy.maxSlippageBps
   )
     throw refuse(`slippageBps ${p.slippageBps} is over maxSlippageBps (${policy.maxSlippageBps})`);
+  // 2026-11-03 (reported privately 2026-10-26): a null buyCostBps (the API could not
+  // price the buy) skipped this check, so maxBuyCostBps failed open exactly when the
+  // cost was unknown. null means "asked, unknown" and refuses; undefined means not asked.
+  if (p.buyCostBps === null && policy.maxBuyCostBps != null)
+    throw refuse(
+      `no buy cost for ${t ?? "this basket"} right now, so this buy cannot be checked against maxBuyCostBps`,
+    );
   if (p.buyCostBps != null && policy.maxBuyCostBps != null && p.buyCostBps > policy.maxBuyCostBps)
     throw refuse(
       `${t ?? "this basket"} costs ${p.buyCostBps.toFixed(1)} bps to buy, over maxBuyCostBps (${policy.maxBuyCostBps})`,

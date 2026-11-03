@@ -64,6 +64,8 @@ In a browser, build the wallet client over the injected provider: `createWalletC
 
 ## Orders
 
+With `policy.maxBuyCostBps` set, market buys and limit buys (wallet and delegated) refuse a current buy cost above the cap or an unknown cost with `POLICY`. For a resting limit, this check applies when the order is placed; its on-chain slippage floor governs the later fill. Sells, exits and cancellations do not require a buy-cost estimate.
+
 ```ts
 // stop-loss + take-profit, one cancels the other
 await bskts.execute(

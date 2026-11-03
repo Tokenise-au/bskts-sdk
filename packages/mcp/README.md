@@ -58,13 +58,15 @@ export default {
 
 The user's own guard rails, checked before anything is built (environment variables for the CLI, `policy` for the handler):
 
-| Variable                  | Effect                                            |
-| ------------------------- | ------------------------------------------------- |
-| `BSKTS_MAX_USD_PER_TRADE` | largest buy, limit buy or sale, in USD            |
-| `BSKTS_ALLOWED_TICKERS`   | comma-separated baskets the agent may trade       |
-| `BSKTS_MAX_BUY_COST_BPS`  | refuse buys whose live buy cost is above this     |
-| `BSKTS_MAX_SLIPPAGE_BPS`  | cap on the slippage an agent may ask for          |
-| `BSKTS_API_URL`           | a different API (default `https://api.bskts.xyz`) |
+| Variable                  | Effect                                                    |
+| ------------------------- | --------------------------------------------------------- |
+| `BSKTS_MAX_USD_PER_TRADE` | largest buy, limit buy or sale, in USD                    |
+| `BSKTS_ALLOWED_TICKERS`   | comma-separated baskets the agent may trade               |
+| `BSKTS_MAX_BUY_COST_BPS`  | refuse buys whose live buy cost is above this, or unknown |
+| `BSKTS_MAX_SLIPPAGE_BPS`  | cap on the slippage an agent may ask for                  |
+| `BSKTS_API_URL`           | a different API (default `https://api.bskts.xyz`)         |
+
+The buy-cost cap applies to market and limit buys through both wallet and delegated tools. A limit's current buy cost is checked when placing the order; its on-chain slippage floor governs the later fill. Sells, exits and cancellations do not require a buy-cost estimate.
 
 MIT
 
