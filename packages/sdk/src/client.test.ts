@@ -1,6 +1,14 @@
 import type { Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import { BsktsClient, BsktsError, execute, policyFromEnv, type Sender, type TxPlan } from "./index";
+import {
+  BsktsClient,
+  BsktsError,
+  checkPolicy,
+  execute,
+  policyFromEnv,
+  type Sender,
+  type TxPlan,
+} from "./index";
 
 const ADDR = "0x000000000000000000000000000000000000dEaD" as const;
 const reply = (body: unknown, status = 200) =>
@@ -186,7 +194,7 @@ describe("policy", () => {
   });
   // 2026-10-27 (bskts agent audit F5): each of these passed the policy before.
   describe("checks effective terms, not only the caller's", () => {
-    const basketBody = (nav: number | null) => ({
+    const basketBody = (nav: number | null, buyCostBps: number | null = 30) => ({
       ticker: "DIGI64",
       name: "",
       thesis: "",
@@ -196,7 +204,7 @@ describe("policy", () => {
       targetWeights: {},
       nav,
       change24h: 0,
-      buyCostBps: 30,
+      buyCostBps,
       group: "",
       risk: null,
       constituents: [],
@@ -248,6 +256,36 @@ describe("policy", () => {
         .buildOrder({ kind: "exit", ticker: "DIGI64", address: ADDR, shares: 1n, stopNav: 1 })
         .catch((x) => x);
       expect([e.code, e.message]).toEqual(["POLICY", expect.stringContaining("no NAV")]);
+    });
+    // 2026-11-03 (reported privately 2026-10-26): a null buyCostBps skipped maxBuyCostBps.
+    it("refuses a buy-cost cap it cannot check, on every buy path", async () => {
+      const c = client(basketBody(1, null), 200, { maxBuyCostBps: 1_000 });
+      const KEY = "0x000000000000000000000000000000000000bEEF" as const;
+      for (const p of [
+        c.buildBuy({ ticker: "DIGI64", amountUsdg: 5, address: ADDR }),
+        c.buildAgentTrade({ owner: ADDR, key: KEY, ticker: "DIGI64", side: "buy", amountUsdg: 5 }),
+        c.buildAgentOrder({
+          owner: ADDR,
+          key: KEY,
+          kind: "limit",
+          ticker: "DIGI64",
+          amountUsdg: 5,
+          triggerNav: 1,
+          slippageBps: 300,
+        }),
+      ]) {
+        const e = await p.catch((x) => x);
+        expect([e.code, e.message]).toEqual(["POLICY", expect.stringContaining("no buy cost")]);
+      }
+    });
+    it("leaves an unknown buy cost alone when no maxBuyCostBps is set", () => {
+      expect(() => checkPolicy({ maxUsdPerTrade: 10 }, { buyCostBps: null })).not.toThrow();
+      expect(() => checkPolicy({ maxBuyCostBps: 10 }, {})).not.toThrow();
+    });
+    it("holds a redeem to allowedTickers", async () => {
+      const c = new BsktsClient({ fetch: never, policy: { allowedTickers: ["DIGI64"] } });
+      const e = await c.buildRedeem({ ticker: "MAG6", address: ADDR, shares: 1n }).catch((x) => x);
+      expect(e.code).toBe("POLICY");
     });
   });
 });

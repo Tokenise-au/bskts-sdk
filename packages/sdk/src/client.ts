@@ -575,7 +575,9 @@ export class BsktsClient {
     return this.#request(s.limitPlan, "/v1/tx/limit", p);
   }
   /** Redeem shares in kind: receive the underlying tokens instead of USDG. */
-  buildRedeem(p: { ticker: string; address: Address; shares: bigint }) {
+  async buildRedeem(p: { ticker: string; address: Address; shares: bigint }) {
+    // 2026-11-03: the one plan builder that skipped allowedTickers
+    checkPolicy(this.policy, { ticker: p.ticker });
     return this.#request(s.redeemPlan, "/v1/tx/redeem", { ...p, mode: "inkind" });
   }
 

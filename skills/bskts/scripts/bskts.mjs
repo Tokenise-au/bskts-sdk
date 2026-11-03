@@ -27718,6 +27718,7 @@ function checkPolicy(policy, p) {
 	if (t && policy.allowedTickers && !policy.allowedTickers.some((x) => x.toUpperCase() === t)) throw refuse(`${t} is not in allowedTickers`);
 	if (p.usd != null && policy.maxUsdPerTrade != null && p.usd > policy.maxUsdPerTrade) throw refuse(`$${p.usd.toFixed(2)} is over maxUsdPerTrade ($${policy.maxUsdPerTrade})`);
 	if (p.slippageBps != null && policy.maxSlippageBps != null && p.slippageBps > policy.maxSlippageBps) throw refuse(`slippageBps ${p.slippageBps} is over maxSlippageBps (${policy.maxSlippageBps})`);
+	if (p.buyCostBps === null && policy.maxBuyCostBps != null) throw refuse(`no buy cost for ${t ?? "this basket"} right now, so this buy cannot be checked against maxBuyCostBps`);
 	if (p.buyCostBps != null && policy.maxBuyCostBps != null && p.buyCostBps > policy.maxBuyCostBps) throw refuse(`${t ?? "this basket"} costs ${p.buyCostBps.toFixed(1)} bps to buy, over maxBuyCostBps (${policy.maxBuyCostBps})`);
 }
 /** Policy from environment variables (BSKTS_MAX_USD_PER_TRADE,
@@ -29278,7 +29279,8 @@ var BsktsClient = class {
 		return this.#request(limitPlan, "/v1/tx/limit", p);
 	}
 	/** Redeem shares in kind: receive the underlying tokens instead of USDG. */
-	buildRedeem(p) {
+	async buildRedeem(p) {
+		checkPolicy(this.policy, { ticker: p.ticker });
 		return this.#request(redeemPlan, "/v1/tx/redeem", {
 			...p,
 			mode: "inkind"
@@ -29613,7 +29615,7 @@ const HOME = resolve(process.env.BSKTS_AGENT_HOME || join(homedir(), ".bskts-age
 const ENV_FILE = join(HOME, ".env");
 const TRADES_DIR = join(HOME, "trades");
 const RPC = "https://bskts.xyz/rpc";
-const SKILL_VERSION = "1.3.3";
+const SKILL_VERSION = "1.3.4";
 const USAGE = `bskts skill CLI ${SKILL_VERSION}. Commands (all print JSON):
   version                    this skill's version, and \`update\` if a newer one is out
   setup --owner 0xWALLET     create this agent's key (once) and print its approval link
